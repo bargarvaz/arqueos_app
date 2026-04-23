@@ -57,6 +57,7 @@ services:
       OTP_EMAIL_FROM: ${OTP_EMAIL_FROM}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:80}
+      MFA_ENABLED: ${MFA_ENABLED:-true}
       TZ: America/Mexico_City
     ports:
       - "8000:8000"
