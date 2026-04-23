@@ -6,9 +6,11 @@ import catalogService, {
   type ModificationReason,
   type Holiday,
 } from '@/services/catalogService';
+import userService, { type Company } from '@/services/userService';
+import vaultService, { type Branch } from '@/services/vaultService';
 import { getErrorMessage } from '@/services/api';
 
-type CatalogTab = 'movement_types' | 'modification_reasons' | 'holidays';
+type CatalogTab = 'movement_types' | 'modification_reasons' | 'holidays' | 'companies' | 'branches';
 
 export default function CatalogManager() {
   const [activeTab, setActiveTab] = useState<CatalogTab>('movement_types');
@@ -17,6 +19,8 @@ export default function CatalogManager() {
     { key: 'movement_types', label: 'Tipos de Movimiento' },
     { key: 'modification_reasons', label: 'Motivos de Modificación' },
     { key: 'holidays', label: 'Días Inhábiles' },
+    { key: 'companies', label: 'Empresas ETV' },
+    { key: 'branches', label: 'Sucursales' },
   ];
 
   return (
@@ -43,6 +47,8 @@ export default function CatalogManager() {
       {activeTab === 'movement_types' && <MovementTypesCatalog />}
       {activeTab === 'modification_reasons' && <ModificationReasonsCatalog />}
       {activeTab === 'holidays' && <HolidaysCatalog />}
+      {activeTab === 'companies' && <CompaniesCatalog />}
+      {activeTab === 'branches' && <BranchesCatalog />}
     </div>
   );
 }
@@ -311,6 +317,194 @@ function HolidaysCatalog() {
             placeholder="Motivo (ej. Día de la Independencia)"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+          />
+        </InlineForm>
+      )}
+    </CatalogTable>
+  );
+}
+
+// ─── Empresas ETV ─────────────────────────────────────────────────────────────
+
+function CompaniesCatalog() {
+  const [items, setItems] = useState<Company[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [name, setName] = useState('');
+  const [error, setError] = useState('');
+  const [includeInactive, setIncludeInactive] = useState(false);
+
+  useEffect(() => { load(); }, [includeInactive]);
+
+  const load = async () => {
+    const data = await userService.listCompanies(includeInactive);
+    setItems(data);
+  };
+
+  const handleSubmit = async () => {
+    setError('');
+    try {
+      if (editId) {
+        await userService.updateCompany(editId, name);
+      } else {
+        await userService.createCompany(name);
+      }
+      setShowForm(false);
+      setEditId(null);
+      setName('');
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  };
+
+  const handleToggle = async (item: Company) => {
+    try {
+      await userService.toggleCompany(item.id);
+      await load();
+    } catch (err) {
+      alert(getErrorMessage(err));
+    }
+  };
+
+  return (
+    <CatalogTable
+      title="Empresas ETV"
+      items={items}
+      columns={['Nombre', 'Estado', 'Acciones']}
+      renderRow={(item: Company) => (
+        <>
+          <td className="px-4 py-3 font-medium">{item.name}</td>
+          <td className="px-4 py-3">
+            <StatusBadge active={item.is_active} />
+          </td>
+          <td className="px-4 py-3">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setEditId(item.id);
+                  setName(item.name);
+                  setShowForm(true);
+                }}
+                className="btn-ghost text-xs px-2 py-1"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => handleToggle(item)}
+                className={`text-xs px-2 py-1 rounded ${item.is_active ? 'text-status-error hover:bg-status-error-light' : 'text-status-success hover:bg-status-success-light'}`}
+              >
+                {item.is_active ? 'Desactivar' : 'Activar'}
+              </button>
+            </div>
+          </td>
+        </>
+      )}
+      onAdd={() => { setEditId(null); setName(''); setShowForm(true); }}
+      includeInactive={includeInactive}
+      onToggleInactive={() => setIncludeInactive(!includeInactive)}
+    >
+      {showForm && (
+        <InlineForm error={error} onCancel={() => setShowForm(false)} onSubmit={handleSubmit} isEdit={!!editId}>
+          <input
+            className="input"
+            placeholder="Nombre de la empresa *"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </InlineForm>
+      )}
+    </CatalogTable>
+  );
+}
+
+// ─── Sucursales ───────────────────────────────────────────────────────────────
+
+function BranchesCatalog() {
+  const [items, setItems] = useState<Branch[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [name, setName] = useState('');
+  const [error, setError] = useState('');
+  const [includeInactive, setIncludeInactive] = useState(false);
+
+  useEffect(() => { load(); }, [includeInactive]);
+
+  const load = async () => {
+    const data = await vaultService.listBranches({ include_inactive: includeInactive });
+    setItems(data);
+  };
+
+  const handleSubmit = async () => {
+    setError('');
+    try {
+      if (editId) {
+        await vaultService.updateBranch(editId, { name });
+      } else {
+        await vaultService.createBranch(name);
+      }
+      setShowForm(false);
+      setEditId(null);
+      setName('');
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  };
+
+  const handleToggle = async (item: Branch) => {
+    try {
+      await vaultService.updateBranch(item.id, { is_active: !item.is_active });
+      await load();
+    } catch (err) {
+      alert(getErrorMessage(err));
+    }
+  };
+
+  return (
+    <CatalogTable
+      title="Sucursales"
+      items={items}
+      columns={['Nombre', 'Estado', 'Acciones']}
+      renderRow={(item: Branch) => (
+        <>
+          <td className="px-4 py-3 font-medium">{item.name}</td>
+          <td className="px-4 py-3">
+            <StatusBadge active={item.is_active} />
+          </td>
+          <td className="px-4 py-3">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setEditId(item.id);
+                  setName(item.name);
+                  setShowForm(true);
+                }}
+                className="btn-ghost text-xs px-2 py-1"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => handleToggle(item)}
+                className={`text-xs px-2 py-1 rounded ${item.is_active ? 'text-status-error hover:bg-status-error-light' : 'text-status-success hover:bg-status-success-light'}`}
+              >
+                {item.is_active ? 'Desactivar' : 'Activar'}
+              </button>
+            </div>
+          </td>
+        </>
+      )}
+      onAdd={() => { setEditId(null); setName(''); setShowForm(true); }}
+      includeInactive={includeInactive}
+      onToggleInactive={() => setIncludeInactive(!includeInactive)}
+    >
+      {showForm && (
+        <InlineForm error={error} onCancel={() => setShowForm(false)} onSubmit={handleSubmit} isEdit={!!editId}>
+          <input
+            className="input"
+            placeholder="Nombre de la sucursal *"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
           />
         </InlineForm>
       )}

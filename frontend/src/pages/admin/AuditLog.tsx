@@ -7,6 +7,8 @@ import { formatDatetime } from '@/utils/formatters';
 interface AuditEntry {
   id: number;
   user_id: number | null;
+  user_email: string | null;
+  user_name: string | null;
   action: string;
   entity_type: string;
   entity_id: number | null;
@@ -91,7 +93,7 @@ export default function AuditLog() {
               placeholder="Todos"
               value={userId}
               onChange={(e) => { setUserId(e.target.value); setPage(1); }}
-              className="input w-28"
+              className="input w-24"
             />
           </div>
           <div>
@@ -176,7 +178,16 @@ export default function AuditLog() {
                     onClick={() => setExpandedId(expandedId === e.id ? null : e.id)}
                   >
                     <td className="px-4 py-3 font-mono text-xs text-text-muted">{formatDatetime(e.created_at)}</td>
-                    <td className="px-4 py-3 font-mono text-xs">{e.user_id ?? '—'}</td>
+                    <td className="px-4 py-3 text-xs">
+                      {e.user_email ? (
+                        <span title={`ID: ${e.user_id}`}>
+                          <span className="font-medium text-text-primary">{e.user_email}</span>
+                          {e.user_name && <span className="block text-text-muted">{e.user_name}</span>}
+                        </span>
+                      ) : (
+                        <span className="text-text-muted">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`text-xs ${ACTION_COLORS[e.action] ?? 'badge-neutral'}`}>
                         {e.action}

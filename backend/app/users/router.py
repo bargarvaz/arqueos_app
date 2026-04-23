@@ -168,9 +168,58 @@ async def create_company(body: CompanyCreate, db: DbSession, admin=AdminUser):
 
 
 @router.get("/companies", response_model=list[CompanyResponse])
-async def list_companies(db: DbSession, current_user=Depends(get_current_user)):
-    """Lista todas las empresas activas."""
+async def list_companies(
+    db: DbSession,
+    current_user=Depends(get_current_user),
+    include_inactive: bool = Query(default=False),
+):
+    """Lista empresas ETV. Sin filtro de inactivos por defecto."""
     from sqlalchemy import select
     from app.users.models import Company
-    result = await db.execute(select(Company).where(Company.is_active == True).order_by(Company.name))
+    q = select(Company).order_by(Company.name)
+    if not include_inactive:
+        q = q.where(Company.is_active == True)
+    result = await db.execute(q)
     return result.scalars().all()
+
+
+@router.patch("/companies/{company_id}", response_model=CompanyResponse)
+async def update_company(
+    company_id: int,
+    body: CompanyCreate,
+    db: DbSession,
+    admin=AdminUser,
+):
+    """Actualiza nombre o estado de una empresa ETV."""
+    from sqlalchemy import select
+    from app.users.models import Company
+    result = await db.execute(select(Company).where(Company.id == company_id))
+    company = result.scalar_one_or_none()
+    if not company:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Empresa no encontrada.")
+    if body.name is not None:
+        company.name = body.name
+    await db.commit()
+    await db.refresh(company)
+    return company
+
+
+@router.patch("/companies/{company_id}/toggle", response_model=CompanyResponse)
+async def toggle_company(
+    company_id: int,
+    db: DbSession,
+    admin=AdminUser,
+):
+    """Activa o desactiva una empresa ETV."""
+    from sqlalchemy import select
+    from app.users.models import Company
+    result = await db.execute(select(Company).where(Company.id == company_id))
+    company = result.scalar_one_or_none()
+    if not company:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Empresa no encontrada.")
+    company.is_active = not company.is_active
+    await db.commit()
+    await db.refresh(company)
+    return company

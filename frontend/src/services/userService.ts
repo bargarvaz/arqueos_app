@@ -85,13 +85,25 @@ const userService = {
     await api.put(`/users/${userId}/vaults`, { vault_ids: vaultIds });
   },
 
-  listCompanies: async (): Promise<Company[]> => {
-    const { data } = await api.get<Company[]>('/users/companies');
+  listCompanies: async (includeInactive = false): Promise<Company[]> => {
+    const { data } = await api.get<Company[]>('/users/companies', {
+      params: { include_inactive: includeInactive },
+    });
     return data;
   },
 
   createCompany: async (name: string): Promise<Company> => {
     const { data } = await api.post<Company>('/users/companies', { name });
+    return data;
+  },
+
+  updateCompany: async (id: number, name: string): Promise<Company> => {
+    const { data } = await api.patch<Company>(`/users/companies/${id}`, { name });
+    return data;
+  },
+
+  toggleCompany: async (id: number): Promise<Company> => {
+    const { data } = await api.patch<Company>(`/users/companies/${id}/toggle`);
     return data;
   },
 };
