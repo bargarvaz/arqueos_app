@@ -76,12 +76,30 @@ async def external_login_step1(
     body: LoginRequest,
     db: DbSession,
 ):
-    """Paso 1 del login ETV: valida credenciales y envía OTP por email."""
+    """
+    Paso 1 del login ETV: valida credenciales y envía OTP por email.
+    Si MFA_ENABLED=False, retorna tokens directamente (modo prueba).
+    """
     ip = request.client.host if request.client else None
+    ua = request.headers.get("user-agent")
 
     result = await auth_service.login_external_step1(
-        db, email=body.email, password=body.password, ip_address=ip
+        db, email=body.email, password=body.password, ip_address=ip, user_agent=ua
     )
+
+    # MFA desactivado: retornar tokens directamente con cookie
+    if result.get("mfa_bypassed"):
+        response = JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "access_token": result["access_token"],
+                "token_type": "bearer",
+                "must_change_password": result["must_change_password"],
+            },
+        )
+        _set_refresh_cookie(response, result["refresh_token"])
+        return response
+
     return result
 
 

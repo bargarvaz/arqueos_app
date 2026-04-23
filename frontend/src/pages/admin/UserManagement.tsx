@@ -7,7 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 
 import DataTable from '@/components/tables/DataTable';
-import userService, { type UserResponse, type Company } from '@/services/userService';
+import userService, { type UserResponse, type Company, type Empresa } from '@/services/userService';
 import vaultService, { type Vault } from '@/services/vaultService';
 import { formatUserRole } from '@/utils/formatters';
 import { getErrorMessage } from '@/services/api';
@@ -17,7 +17,8 @@ const createSchema = z.object({
   full_name: z.string().min(2, 'Nombre requerido.'),
   role: z.enum(['admin', 'operations', 'data_science', 'etv']),
   user_type: z.enum(['internal', 'external']),
-  company_id: z.number().nullable().optional(),
+  company_id: z.number().nullable().optional(),   // ETV
+  empresa_id: z.number().nullable().optional(),   // Sub-empresa
   vault_ids: z.array(z.number()).optional(),
 });
 
@@ -45,6 +46,7 @@ export default function UserManagement() {
   const [tempPassword, setTempPassword] = useState('');
 
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [vaults, setVaults] = useState<Vault[]>([]);
   const [selectedVaults, setSelectedVaults] = useState<number[]>([]);
 
@@ -57,6 +59,7 @@ export default function UserManagement() {
   } = useForm<CreateForm>({ resolver: zodResolver(createSchema) });
 
   const watchRole = watch('role');
+  const watchCompanyId = watch('company_id');
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -81,6 +84,14 @@ export default function UserManagement() {
     userService.listCompanies().then(setCompanies).catch(() => {});
     vaultService.listVaults({ page: 1, page_size: 200 }).then(d => setVaults(d.items)).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (watchRole === 'etv' && watchCompanyId) {
+      userService.listEmpresas({ etv_id: watchCompanyId }).then(setEmpresas).catch(() => {});
+    } else {
+      setEmpresas([]);
+    }
+  }, [watchRole, watchCompanyId]);
 
   const handleToggleActive = async (user: UserResponse) => {
     const action = user.is_active ? 'desactivar' : 'activar';
@@ -109,6 +120,7 @@ export default function UserManagement() {
       const { tempPassword: tp } = await userService.createUser({
         ...data,
         company_id: data.role === 'etv' ? data.company_id ?? null : null,
+        empresa_id: data.role === 'etv' ? data.empresa_id ?? null : null,
         vault_ids: data.role === 'etv' ? selectedVaults : [],
       });
       setTempPassword(tp);
@@ -127,6 +139,7 @@ export default function UserManagement() {
     setCreateError('');
     reset();
     setSelectedVaults([]);
+    setEmpresas([]);
   };
 
   const columns: ColumnDef<UserResponse>[] = [
@@ -304,14 +317,25 @@ export default function UserManagement() {
                   {watchRole === 'etv' && (
                     <>
                       <div className="col-span-2">
-                        <label className="label">Empresa</label>
+                        <label className="label">ETV (transportadora)</label>
                         <select className="input" {...register('company_id', { valueAsNumber: true })}>
-                          <option value="">Seleccionar empresa...</option>
+                          <option value="">Seleccionar ETV...</option>
                           {companies.map(c => (
                             <option key={c.id} value={c.id}>{c.name}</option>
                           ))}
                         </select>
                       </div>
+                      {empresas.length > 0 && (
+                        <div className="col-span-2">
+                          <label className="label">Empresa</label>
+                          <select className="input" {...register('empresa_id', { valueAsNumber: true })}>
+                            <option value="">Sin empresa específica</option>
+                            {empresas.map(e => (
+                              <option key={e.id} value={e.id}>{e.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                       <div className="col-span-2">
                         <label className="label">Bóvedas asignadas</label>
                         <div className="border border-border rounded max-h-36 overflow-y-auto p-2 space-y-1">

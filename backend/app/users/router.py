@@ -13,6 +13,9 @@ from app.users.schemas import (
     PasswordResetResponse,
     CompanyCreate,
     CompanyResponse,
+    EmpresaCreate,
+    EmpresaUpdate,
+    EmpresaResponse,
 )
 from app.common.pagination import PaginationParams, PagedResponse
 from app.dependencies import get_db, require_admin, get_current_user, DbSession, CurrentUser
@@ -42,6 +45,7 @@ async def create_user(
         role=body.role,
         user_type=body.user_type,
         company_id=body.company_id,
+        empresa_id=body.empresa_id,
         vault_ids=body.vault_ids,
         created_by_user_id=admin.id,
         ip_address=ip,
@@ -211,15 +215,87 @@ async def toggle_company(
     db: DbSession,
     admin=AdminUser,
 ):
-    """Activa o desactiva una empresa ETV."""
+    """Activa o desactiva una ETV."""
     from sqlalchemy import select
     from app.users.models import Company
     result = await db.execute(select(Company).where(Company.id == company_id))
     company = result.scalar_one_or_none()
     if not company:
         from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="Empresa no encontrada.")
+        raise HTTPException(status_code=404, detail="ETV no encontrada.")
     company.is_active = not company.is_active
     await db.commit()
     await db.refresh(company)
     return company
+
+
+# ─── Sub-empresas ─────────────────────────────────────────────────────────────
+
+@router.get("/empresas", response_model=list[EmpresaResponse])
+async def list_empresas(
+    db: DbSession,
+    current_user=Depends(get_current_user),
+    etv_id: int | None = Query(default=None),
+    include_inactive: bool = Query(default=False),
+):
+    """Lista sub-empresas, opcionalmente filtradas por ETV."""
+    from sqlalchemy import select
+    from app.users.models import Empresa
+    q = select(Empresa).order_by(Empresa.name)
+    if etv_id:
+        q = q.where(Empresa.etv_id == etv_id)
+    if not include_inactive:
+        q = q.where(Empresa.is_active == True)
+    result = await db.execute(q)
+    return result.scalars().all()
+
+
+@router.post("/empresas", response_model=EmpresaResponse, status_code=status.HTTP_201_CREATED)
+async def create_empresa(body: EmpresaCreate, db: DbSession, admin=AdminUser):
+    """Crea una sub-empresa dentro de una ETV."""
+    from app.users.models import Empresa
+    empresa = Empresa(name=body.name, etv_id=body.etv_id)
+    db.add(empresa)
+    await db.commit()
+    await db.refresh(empresa)
+    return empresa
+
+
+@router.patch("/empresas/{empresa_id}", response_model=EmpresaResponse)
+async def update_empresa(
+    empresa_id: int,
+    body: EmpresaUpdate,
+    db: DbSession,
+    admin=AdminUser,
+):
+    """Actualiza nombre o ETV de una sub-empresa."""
+    from sqlalchemy import select
+    from app.users.models import Empresa
+    from fastapi import HTTPException
+    result = await db.execute(select(Empresa).where(Empresa.id == empresa_id))
+    empresa = result.scalar_one_or_none()
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada.")
+    if body.name is not None:
+        empresa.name = body.name
+    if body.etv_id is not None:
+        empresa.etv_id = body.etv_id
+    await db.commit()
+    await db.refresh(empresa)
+    return empresa
+
+
+@router.patch("/empresas/{empresa_id}/toggle", response_model=EmpresaResponse)
+async def toggle_empresa(empresa_id: int, db: DbSession, admin=AdminUser):
+    """Activa o desactiva una sub-empresa."""
+    from sqlalchemy import select
+    from app.users.models import Empresa
+    from fastapi import HTTPException
+    result = await db.execute(select(Empresa).where(Empresa.id == empresa_id))
+    empresa = result.scalar_one_or_none()
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada.")
+    empresa.is_active = not empresa.is_active
+    await db.commit()
+    await db.refresh(empresa)
+    return empresa

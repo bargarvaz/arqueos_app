@@ -32,7 +32,10 @@ class UserType(str, enum.Enum):
 
 
 class Company(Base):
-    """Empresas ETV (PanAmericano, GSI, etc.)."""
+    """
+    ETVs (transportadoras de valores): PanAmericano, GSI, etc.
+    El campo company_id en User y Vault hace referencia a esta tabla como ETV.
+    """
 
     __tablename__ = "companies"
 
@@ -50,6 +53,35 @@ class Company(Base):
     )
 
     users: Mapped[list["User"]] = relationship("User", back_populates="company")
+    empresas: Mapped[list["Empresa"]] = relationship("Empresa", back_populates="etv")
+
+
+class Empresa(Base):
+    """
+    Sub-empresas dentro de una ETV.
+    Ej: GSI → Cometra, Seguritec, Sepsa, Tecnoval.
+    PanAmericano → PanAmericano.
+    """
+
+    __tablename__ = "empresas"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    etv_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("companies.id"), nullable=False, index=True
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    etv: Mapped["Company"] = relationship("Company", back_populates="empresas")
 
 
 class User(Base):
@@ -71,6 +103,9 @@ class User(Base):
     )
     company_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("companies.id"), nullable=True
+    )
+    empresa_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("empresas.id"), nullable=True
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     must_change_password: Mapped[bool] = mapped_column(
@@ -94,6 +129,7 @@ class User(Base):
     )
 
     company: Mapped["Company | None"] = relationship("Company", back_populates="users")
+    empresa: Mapped["Empresa | None"] = relationship("Empresa", foreign_keys=[empresa_id])
     vault_assignments: Mapped[list["UserVaultAssignment"]] = relationship(
         "UserVaultAssignment", back_populates="user"
     )

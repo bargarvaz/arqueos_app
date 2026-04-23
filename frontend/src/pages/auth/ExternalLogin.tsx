@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Shield } from 'lucide-react';
 
 import authService from '@/services/authService';
+import { useAuthStore } from '@/store/authStore';
 import { getErrorMessage } from '@/services/api';
 import { ROUTES } from '@/utils/constants';
 
@@ -19,6 +20,7 @@ type FormData = z.infer<typeof schema>;
 
 export default function ExternalLogin() {
   const navigate = useNavigate();
+  const { setUser } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
   const [serverError, setServerError] = useState('');
 
@@ -32,7 +34,20 @@ export default function ExternalLogin() {
     setServerError('');
     try {
       const response = await authService.loginExternalStep1(data.email, data.password);
-      // Navegar al paso 2 (OTP) llevando el session_token y email
+
+      // MFA desactivado: el backend retorna el token directamente
+      if (response.access_token) {
+        const me = await authService.getMe();
+        setUser(me);
+        if (response.must_change_password) {
+          navigate(ROUTES.CHANGE_PASSWORD, { replace: true });
+        } else {
+          navigate(ROUTES.ETV_VAULTS, { replace: true });
+        }
+        return;
+      }
+
+      // Flujo normal: navegar al paso 2 (OTP)
       navigate(ROUTES.MFA_VERIFY, {
         state: { session_token: response.session_token, email: data.email },
         replace: true,

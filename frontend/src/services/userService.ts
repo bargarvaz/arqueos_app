@@ -7,13 +7,21 @@ export interface Company {
   is_active: boolean;
 }
 
+export interface Empresa {
+  id: number;
+  name: string;
+  etv_id: number;
+  is_active: boolean;
+}
+
 export interface UserResponse {
   id: number;
   email: string;
   full_name: string;
   role: string;
   user_type: string;
-  company_id: number | null;
+  company_id: number | null;    // ETV
+  empresa_id: number | null;    // Sub-empresa
   is_active: boolean;
   must_change_password: boolean;
   mfa_enabled: boolean;
@@ -29,6 +37,7 @@ export interface CreateUserPayload {
   role: string;
   user_type: string;
   company_id?: number | null;
+  empresa_id?: number | null;
   vault_ids?: number[];
 }
 
@@ -104,6 +113,27 @@ const userService = {
 
   toggleCompany: async (id: number): Promise<Company> => {
     const { data } = await api.patch<Company>(`/users/companies/${id}/toggle`);
+    return data;
+  },
+
+  // ─── Sub-empresas ──────────────────────────────────────────────────────────
+  listEmpresas: async (params?: { etv_id?: number; include_inactive?: boolean }): Promise<Empresa[]> => {
+    const { data } = await api.get<Empresa[]>('/users/empresas', { params });
+    return data;
+  },
+
+  createEmpresa: async (name: string, etv_id: number): Promise<Empresa> => {
+    const { data } = await api.post<Empresa>('/users/empresas', { name, etv_id });
+    return data;
+  },
+
+  updateEmpresa: async (id: number, updates: { name?: string; etv_id?: number }): Promise<Empresa> => {
+    const { data } = await api.patch<Empresa>(`/users/empresas/${id}`, updates);
+    return data;
+  },
+
+  toggleEmpresa: async (id: number): Promise<Empresa> => {
+    const { data } = await api.patch<Empresa>(`/users/empresas/${id}/toggle`);
     return data;
   },
 };

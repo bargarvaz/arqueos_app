@@ -20,8 +20,12 @@ export interface MeResponse {
 }
 
 export interface OtpStep1Response {
-  session_token: string;
-  message: string;
+  session_token?: string;
+  message?: string;
+  // MFA desactivado: se devuelven tokens directamente
+  access_token?: string;
+  token_type?: string;
+  must_change_password?: boolean;
 }
 
 const authService = {
@@ -32,9 +36,13 @@ const authService = {
     return data;
   },
 
-  /** Paso 1 del login ETV: valida credenciales, envía OTP. */
+  /** Paso 1 del login ETV: valida credenciales, envía OTP (o retorna tokens si MFA está desactivado). */
   loginExternalStep1: async (email: string, password: string): Promise<OtpStep1Response> => {
     const { data } = await api.post<OtpStep1Response>('/auth/external/login', { email, password });
+    // Cuando MFA está desactivado el backend retorna el token directamente
+    if (data.access_token) {
+      localStorage.setItem('access_token', data.access_token);
+    }
     return data;
   },
 

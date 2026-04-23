@@ -77,10 +77,11 @@ async def login_external_step1(
     email: str,
     password: str,
     ip_address: str | None = None,
+    user_agent: str | None = None,
 ) -> dict:
     """
     Primer paso del login ETV: valida credenciales y envía OTP.
-    Retorna session_token para usar en el paso 2.
+    Si settings.mfa_enabled=False, retorna tokens directamente (modo prueba).
     """
     user = await _get_active_user_by_email(db, email)
 
@@ -90,13 +91,31 @@ async def login_external_step1(
     if user.user_type != UserType.external:
         raise ForbiddenError("Este portal es exclusivo para usuarios ETV.")
 
-    # Generar OTP y session token
+    # ── Modo prueba: MFA desactivado ─────────────────────────────────────────
+    if not settings.mfa_enabled:
+        await log_action(
+            db,
+            user_id=user.id,
+            action="login",
+            entity_type="user",
+            entity_id=user.id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        await db.commit()
+        return {
+            "mfa_bypassed": True,
+            "access_token": create_access_token(user.id),
+            "refresh_token": create_refresh_token(user.id),
+            "must_change_password": user.must_change_password,
+        }
+
+    # ── Flujo normal con OTP ──────────────────────────────────────────────────
     otp_code = generate_otp()
     session_token = secrets.token_urlsafe(32)
 
     await otp_store.create_otp_session(session_token, email, user.id, otp_code)
 
-    # Enviar OTP por email
     sent = await send_otp_email(user.email, user.full_name, otp_code)
     if not sent:
         logger.warning("Fallo al enviar OTP a %s, pero continuando.", email)

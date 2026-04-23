@@ -17,19 +17,39 @@ class CompanyResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class EmpresaCreate(BaseModel):
+    name: str
+    etv_id: int
+
+
+class EmpresaUpdate(BaseModel):
+    name: str | None = None
+    etv_id: int | None = None
+
+
+class EmpresaResponse(BaseModel):
+    id: int
+    name: str
+    etv_id: int
+    is_active: bool
+
+    model_config = {"from_attributes": True}
+
+
 class UserCreate(BaseModel):
     email: EmailStr
     full_name: str
     role: UserRole
     user_type: UserType
-    company_id: int | None = None
+    company_id: int | None = None   # ETV (transportadora)
+    empresa_id: int | None = None   # Sub-empresa dentro de la ETV
     vault_ids: list[int] = []
 
     @field_validator("company_id")
     @classmethod
     def validate_company_for_etv(cls, v, info):
         if info.data.get("role") == UserRole.etv and not v:
-            raise ValueError("Los usuarios ETV deben tener una empresa asignada.")
+            raise ValueError("Los usuarios ETV deben tener una ETV asignada.")
         return v
 
 
@@ -37,6 +57,7 @@ class UserUpdate(BaseModel):
     full_name: str | None = None
     is_active: bool | None = None
     company_id: int | None = None
+    empresa_id: int | None = None
 
 
 class UserResponse(BaseModel):
@@ -45,7 +66,8 @@ class UserResponse(BaseModel):
     full_name: str
     role: UserRole
     user_type: UserType
-    company_id: int | None
+    company_id: int | None     # ETV
+    empresa_id: int | None     # Sub-empresa
     is_active: bool
     must_change_password: bool
     mfa_enabled: bool

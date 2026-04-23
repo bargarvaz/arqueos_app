@@ -79,6 +79,9 @@ class Vault(Base):
     company_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("companies.id"), nullable=False
     )
+    empresa_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("empresas.id"), nullable=True
+    )
     branch_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("branches.id"), nullable=False
     )

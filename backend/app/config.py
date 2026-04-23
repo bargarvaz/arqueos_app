@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     # ─── Zona horaria ─────────────────────────────────────────────
     timezone: str = "America/Mexico_City"
 
+    # ─── Feature flags ────────────────────────────────────────────
+    mfa_enabled: bool = True  # False → login ETV sin OTP (solo para pruebas)
+
     @property
     def is_production(self) -> bool:
         return self.environment == "production"

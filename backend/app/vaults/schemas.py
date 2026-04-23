@@ -55,7 +55,8 @@ class PersonnelResponse(BaseModel):
 class VaultCreate(BaseModel):
     vault_code: str
     vault_name: str
-    company_id: int
+    company_id: int           # ETV (transportadora)
+    empresa_id: int | None = None  # Sub-empresa dentro de la ETV
     branch_id: int
     manager_id: int | None = None
     treasurer_id: int | None = None
@@ -64,6 +65,7 @@ class VaultCreate(BaseModel):
 
 class VaultUpdate(BaseModel):
     vault_name: str | None = None
+    empresa_id: int | None = None
     branch_id: int | None = None
     manager_id: int | None = None
     treasurer_id: int | None = None
@@ -78,6 +80,7 @@ class VaultResponse(BaseModel):
     vault_code: str
     vault_name: str
     company_id: int
+    empresa_id: int | None
     branch_id: int
     manager_id: int | None
     treasurer_id: int | None
