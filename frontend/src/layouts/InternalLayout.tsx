@@ -1,0 +1,176 @@
+// Layout para usuarios internos: sidebar + header + área de contenido
+import { useState } from 'react';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import {
+  LayoutDashboard,
+  FileSearch,
+  Vault,
+  Users,
+  BarChart3,
+  Settings,
+  Bell,
+  LogOut,
+  Menu,
+  X,
+  BookOpen,
+  ClipboardList,
+} from 'lucide-react';
+
+import { useAuth } from '@/hooks/useAuth';
+import { ROUTES } from '@/utils/constants';
+import NotificationBell from '@/components/notifications/NotificationBell';
+
+interface NavItem {
+  label: string;
+  to: string;
+  icon: React.ReactNode;
+  roles?: string[];
+}
+
+const NAV_ITEMS: NavItem[] = [
+  {
+    label: 'Dashboard',
+    to: ROUTES.DASHBOARD,
+    icon: <LayoutDashboard className="w-5 h-5" />,
+  },
+  {
+    label: 'Explorador de Arqueos',
+    to: ROUTES.ARQUEO_EXPLORER,
+    icon: <FileSearch className="w-5 h-5" />,
+  },
+  {
+    label: 'Directorio de Bóvedas',
+    to: ROUTES.VAULT_DIRECTORY,
+    icon: <Vault className="w-5 h-5" />,
+  },
+  {
+    label: 'Personal',
+    to: ROUTES.PERSONNEL_DIRECTORY,
+    icon: <BookOpen className="w-5 h-5" />,
+  },
+  {
+    label: 'Reportes de Error',
+    to: ROUTES.ERROR_REPORTS,
+    icon: <ClipboardList className="w-5 h-5" />,
+    roles: ['admin', 'operations'],
+  },
+  {
+    label: 'Reportes',
+    to: ROUTES.REPORTS,
+    icon: <BarChart3 className="w-5 h-5" />,
+  },
+  // Admin
+  {
+    label: 'Usuarios',
+    to: ROUTES.USER_MANAGEMENT,
+    icon: <Users className="w-5 h-5" />,
+    roles: ['admin'],
+  },
+  {
+    label: 'Catálogos',
+    to: ROUTES.CATALOG_MANAGER,
+    icon: <Settings className="w-5 h-5" />,
+    roles: ['admin'],
+  },
+  {
+    label: 'Auditoría',
+    to: ROUTES.AUDIT_LOG,
+    icon: <ClipboardList className="w-5 h-5" />,
+    roles: ['admin'],
+  },
+];
+
+export default function InternalLayout() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  const visibleItems = NAV_ITEMS.filter(
+    (item) => !item.roles || item.roles.includes(user?.role ?? ''),
+  );
+
+  const handleLogout = async () => {
+    await logout();
+  };
+
+  return (
+    <div className="flex h-screen bg-surface overflow-hidden">
+      {/* Sidebar */}
+      <aside
+        className={`
+          bg-primary flex flex-col transition-all duration-200
+          ${sidebarOpen ? 'w-60' : 'w-16'}
+        `}
+      >
+        {/* Logo */}
+        <div className="flex items-center gap-3 px-4 py-5 border-b border-primary-dark">
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="text-white/70 hover:text-white transition-colors flex-shrink-0"
+          >
+            {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+          {sidebarOpen && (
+            <span className="text-white font-bold text-sm truncate">Sistema Arqueos</span>
+          )}
+        </div>
+
+        {/* Navegación */}
+        <nav className="flex-1 py-4 overflow-y-auto">
+          {visibleItems.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) => `
+                flex items-center gap-3 px-4 py-3 text-sm transition-colors
+                ${isActive
+                  ? 'bg-primary-dark text-white font-medium'
+                  : 'text-white/70 hover:bg-primary-dark/50 hover:text-white'}
+              `}
+            >
+              <span className="flex-shrink-0">{item.icon}</span>
+              {sidebarOpen && <span className="truncate">{item.label}</span>}
+            </NavLink>
+          ))}
+        </nav>
+
+        {/* Usuario + logout */}
+        <div className="border-t border-primary-dark p-4">
+          {sidebarOpen && user && (
+            <div className="mb-3">
+              <p className="text-white text-xs font-medium truncate">{user.full_name}</p>
+              <p className="text-white/50 text-xs capitalize">{user.role}</p>
+            </div>
+          )}
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 text-white/70 hover:text-white text-sm transition-colors"
+          >
+            <LogOut className="w-4 h-4 flex-shrink-0" />
+            {sidebarOpen && <span>Cerrar sesión</span>}
+          </button>
+        </div>
+      </aside>
+
+      {/* Main */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header */}
+        <header className="bg-white border-b border-border flex items-center justify-between px-6 py-3 h-14 flex-shrink-0">
+          <div />
+          <div className="flex items-center gap-4">
+            <NotificationBell />
+            <div className="text-right">
+              <p className="text-sm font-medium text-text-primary">{user?.full_name}</p>
+              <p className="text-xs text-text-muted capitalize">{user?.role}</p>
+            </div>
+          </div>
+        </header>
+
+        {/* Contenido */}
+        <main className="flex-1 overflow-y-auto p-6">
+          <Outlet />
+        </main>
+      </div>
+    </div>
+  );
+}

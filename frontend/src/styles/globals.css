@@ -1,0 +1,112 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    color: #1A1A1A;
+    background-color: #F5F5F5;
+  }
+
+  body {
+    min-height: 100vh;
+    line-height: 1.5;
+  }
+
+  /* Scrollbar minimalista */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #F5F5F5;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #C0C0C0;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #9E9E9E;
+  }
+}
+
+@layer components {
+  /* Botones base */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded font-medium text-sm
+           transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
+           focus:outline-none focus:ring-2 focus:ring-offset-1;
+  }
+
+  .btn-primary {
+    @apply btn bg-primary text-white hover:bg-primary-dark focus:ring-primary;
+  }
+
+  .btn-secondary {
+    @apply btn bg-secondary text-white hover:bg-secondary-dark focus:ring-secondary;
+  }
+
+  .btn-outline {
+    @apply btn border border-primary text-primary hover:bg-primary hover:text-white focus:ring-primary;
+  }
+
+  .btn-ghost {
+    @apply btn text-text-secondary hover:bg-surface focus:ring-border;
+  }
+
+  .btn-danger {
+    @apply btn bg-status-error text-white hover:opacity-90 focus:ring-status-error;
+  }
+
+  /* Inputs */
+  .input {
+    @apply w-full px-3 py-2 border border-border rounded text-sm text-text-primary bg-white
+           placeholder:text-text-muted
+           focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent
+           disabled:bg-surface disabled:cursor-not-allowed;
+  }
+
+  .input-error {
+    @apply input border-status-error focus:ring-status-error;
+  }
+
+  /* Labels */
+  .label {
+    @apply block text-sm font-medium text-text-primary mb-1;
+  }
+
+  /* Cards */
+  .card {
+    @apply bg-white border border-border rounded-lg p-6 shadow-sm;
+  }
+
+  /* Badges de estado */
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-success {
+    @apply badge bg-status-success-light text-status-success;
+  }
+
+  .badge-error {
+    @apply badge bg-status-error-light text-status-error;
+  }
+
+  .badge-warning {
+    @apply badge bg-status-warning-light text-status-warning;
+  }
+
+  .badge-info {
+    @apply badge bg-status-info-light text-status-info;
+  }
+}
