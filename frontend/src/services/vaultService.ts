@@ -104,27 +104,13 @@ const vaultService = {
     return data;
   },
 
-  // ─── Personal ─────────────────────────────────────────────────────────────
+  // ─── Personal (solo lectura — usado para dropdowns en bóvedas) ───────────
   listPersonnel: async (params?: {
     personnel_type?: string;
     include_inactive?: boolean;
     search?: string;
   }): Promise<Personnel[]> => {
     const { data } = await api.get('/vaults/personnel/list', { params });
-    return data;
-  },
-
-  createPersonnel: async (body: {
-    full_name: string;
-    position: string;
-    personnel_type: 'manager' | 'treasurer';
-  }): Promise<Personnel> => {
-    const { data } = await api.post('/vaults/personnel', body);
-    return data;
-  },
-
-  updatePersonnel: async (id: number, updates: Partial<Personnel>): Promise<Personnel> => {
-    const { data } = await api.patch(`/vaults/personnel/${id}`, updates);
     return data;
   },
 };

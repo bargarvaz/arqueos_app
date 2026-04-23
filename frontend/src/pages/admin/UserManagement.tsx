@@ -1,14 +1,19 @@
 // Gestión de usuarios — solo Admin
 import { useState, useEffect, useCallback } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { UserPlus, KeyRound } from 'lucide-react';
+import { UserPlus, KeyRound, Vault } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 
 import DataTable from '@/components/tables/DataTable';
-import userService, { type UserResponse, type Company, type Empresa } from '@/services/userService';
-import vaultService, { type Vault } from '@/services/vaultService';
+import userService, {
+  type UserResponse,
+  type UserDetailResponse,
+  type Company,
+  type Empresa,
+} from '@/services/userService';
+import vaultService, { type Vault as VaultType } from '@/services/vaultService';
 import { formatUserRole } from '@/utils/formatters';
 import { getErrorMessage } from '@/services/api';
 
@@ -19,7 +24,6 @@ const createSchema = z.object({
   puesto: z.string().optional(),
   company_id: z.number().nullable().optional(),
   empresa_id: z.number().nullable().optional(),
-  vault_ids: z.array(z.number()).optional(),
 });
 
 type CreateForm = z.infer<typeof createSchema>;
@@ -31,8 +35,7 @@ const ROLE_OPTIONS = [
   { value: 'etv', label: 'ETV' },
 ];
 
-// user_type se deriva del rol — no se pide al usuario
-function getUserType(role: string) {
+function getUserTypeLabel(role: string) {
   return role === 'etv' ? 'Externo' : 'Interno';
 }
 
@@ -46,14 +49,21 @@ export default function UserManagement() {
   const [isActive, setIsActive] = useState<boolean | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Crear usuario
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createError, setCreateError] = useState('');
   const [tempPassword, setTempPassword] = useState('');
+  const [createVaults, setCreateVaults] = useState<number[]>([]);
+
+  // Editar bóvedas
+  const [vaultModalUser, setVaultModalUser] = useState<UserDetailResponse | null>(null);
+  const [editingVaults, setEditingVaults] = useState<number[]>([]);
+  const [vaultSaving, setVaultSaving] = useState(false);
+  const [vaultError, setVaultError] = useState('');
 
   const [companies, setCompanies] = useState<Company[]>([]);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [vaults, setVaults] = useState<Vault[]>([]);
-  const [selectedVaults, setSelectedVaults] = useState<number[]>([]);
+  const [allVaults, setAllVaults] = useState<VaultType[]>([]);
 
   const {
     register,
@@ -87,7 +97,7 @@ export default function UserManagement() {
 
   useEffect(() => {
     userService.listCompanies().then(setCompanies).catch(() => {});
-    vaultService.listVaults({ page: 1, page_size: 200 }).then(d => setVaults(d.items)).catch(() => {});
+    vaultService.listVaults({ page: 1, page_size: 200 }).then(d => setAllVaults(d.items)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -97,6 +107,8 @@ export default function UserManagement() {
       setEmpresas([]);
     }
   }, [watchRole, watchCompanyId]);
+
+  // ─── Acciones de tabla ───────────────────────────────────────────────────────
 
   const handleToggleActive = async (user: UserResponse) => {
     const action = user.is_active ? 'desactivar' : 'activar';
@@ -119,6 +131,34 @@ export default function UserManagement() {
     }
   };
 
+  const openVaultModal = async (user: UserResponse) => {
+    try {
+      const detail = await userService.getUser(user.id);
+      setVaultModalUser(detail);
+      setEditingVaults(detail.assigned_vault_ids);
+      setVaultError('');
+    } catch (err) {
+      alert(getErrorMessage(err));
+    }
+  };
+
+  const saveVaults = async () => {
+    if (!vaultModalUser) return;
+    setVaultSaving(true);
+    setVaultError('');
+    try {
+      await userService.assignVaults(vaultModalUser.id, editingVaults);
+      setVaultModalUser(null);
+      await load();
+    } catch (err) {
+      setVaultError(getErrorMessage(err));
+    } finally {
+      setVaultSaving(false);
+    }
+  };
+
+  // ─── Crear usuario ───────────────────────────────────────────────────────────
+
   const onCreateSubmit = async (data: CreateForm) => {
     setCreateError('');
     try {
@@ -129,11 +169,11 @@ export default function UserManagement() {
         puesto: data.puesto || null,
         company_id: data.role === 'etv' ? data.company_id ?? null : null,
         empresa_id: data.role === 'etv' ? data.empresa_id ?? null : null,
-        vault_ids: data.role === 'etv' ? selectedVaults : [],
+        vault_ids: data.role === 'etv' ? createVaults : [],
       });
       setTempPassword(tp);
       reset();
-      setSelectedVaults([]);
+      setCreateVaults([]);
       await load();
       if (!tp) setShowCreateModal(false);
     } catch (err) {
@@ -146,9 +186,11 @@ export default function UserManagement() {
     setTempPassword('');
     setCreateError('');
     reset();
-    setSelectedVaults([]);
+    setCreateVaults([]);
     setEmpresas([]);
   };
+
+  // ─── Columnas ────────────────────────────────────────────────────────────────
 
   const columns: ColumnDef<UserResponse>[] = [
     {
@@ -196,6 +238,16 @@ export default function UserManagement() {
         const u = row.original;
         return (
           <div className="flex items-center gap-2">
+            {u.role === 'etv' && (
+              <button
+                onClick={() => openVaultModal(u)}
+                className="flex items-center gap-1 text-xs text-secondary hover:bg-secondary/10 px-2 py-1 rounded"
+                title="Gestionar bóvedas asignadas"
+              >
+                <Vault className="w-3.5 h-3.5" />
+                Bóvedas
+              </button>
+            )}
             <button
               onClick={() => handleResetPassword(u)}
               className="flex items-center gap-1 text-xs text-primary hover:bg-primary/10 px-2 py-1 rounded"
@@ -219,6 +271,8 @@ export default function UserManagement() {
       },
     },
   ];
+
+  const activeVaults = allVaults.filter(v => v.is_active);
 
   return (
     <div>
@@ -272,11 +326,11 @@ export default function UserManagement() {
         isLoading={isLoading}
       />
 
-      {/* Modal crear usuario */}
+      {/* ─── Modal: Crear usuario ─────────────────────────────────────────────── */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg w-full max-w-lg shadow-xl">
-            <div className="flex items-center justify-between p-5 border-b border-border">
+          <div className="bg-white rounded-lg w-full max-w-lg shadow-xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-border flex-shrink-0">
               <h2 className="text-base font-semibold text-text-primary">Nuevo Usuario</h2>
               <button onClick={closeCreate} className="text-text-muted hover:text-text-primary text-lg leading-none">×</button>
             </div>
@@ -293,7 +347,7 @@ export default function UserManagement() {
                 <button onClick={closeCreate} className="btn-primary w-full">Cerrar</button>
               </div>
             ) : (
-              <form onSubmit={handleSubmit(onCreateSubmit)} className="p-5 space-y-4">
+              <form onSubmit={handleSubmit(onCreateSubmit)} className="p-5 space-y-4 overflow-y-auto flex-1">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2">
                     <label className="label">Correo electrónico</label>
@@ -321,9 +375,9 @@ export default function UserManagement() {
                       type="text"
                       readOnly
                       className="input bg-surface text-text-muted cursor-default"
-                      value={watchRole ? getUserType(watchRole) : '—'}
+                      value={watchRole ? getUserTypeLabel(watchRole) : '—'}
                     />
-                    <p className="text-text-muted text-xs mt-1">Se asigna automáticamente por rol</p>
+                    <p className="text-text-muted text-xs mt-1">Auto por rol</p>
                   </div>
                   <div className="col-span-2">
                     <label className="label">Puesto</label>
@@ -338,7 +392,7 @@ export default function UserManagement() {
                   {watchRole === 'etv' && (
                     <>
                       <div className="col-span-2">
-                        <label className="label">ETV (transportadora)</label>
+                        <label className="label">ETV (transportadora) <span className="text-status-error">*</span></label>
                         <select className="input" {...register('company_id', { valueAsNumber: true })}>
                           <option value="">Seleccionar ETV...</option>
                           {companies.map(c => (
@@ -358,50 +412,98 @@ export default function UserManagement() {
                         </div>
                       )}
                       <div className="col-span-2">
-                        <label className="label">Bóvedas asignadas</label>
-                        <div className="border border-border rounded max-h-36 overflow-y-auto p-2 space-y-1">
-                          {vaults.filter(v => v.is_active).map(v => (
-                            <label key={v.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-surface rounded px-1">
-                              <input
-                                type="checkbox"
-                                checked={selectedVaults.includes(v.id)}
-                                onChange={(e) => {
-                                  setSelectedVaults(prev =>
-                                    e.target.checked ? [...prev, v.id] : prev.filter(id => id !== v.id)
-                                  );
-                                }}
-                                className="rounded"
-                              />
-                              <span className="font-mono text-xs text-primary">{v.vault_code}</span>
-                              <span className="text-text-secondary">{v.vault_name}</span>
-                            </label>
-                          ))}
-                          {vaults.filter(v => v.is_active).length === 0 && (
-                            <p className="text-xs text-text-muted px-1 py-2">No hay bóvedas activas.</p>
+                        <label className="label">
+                          Bóvedas asignadas
+                          {createVaults.length > 0 && (
+                            <span className="ml-2 text-primary font-normal">({createVaults.length} seleccionada{createVaults.length > 1 ? 's' : ''})</span>
+                          )}
+                        </label>
+                        <div className="border border-border rounded max-h-40 overflow-y-auto p-2 space-y-1">
+                          {activeVaults.length === 0 ? (
+                            <p className="text-xs text-text-muted px-1 py-2">No hay bóvedas activas disponibles.</p>
+                          ) : (
+                            activeVaults.map(v => (
+                              <label key={v.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-surface rounded px-1 py-0.5">
+                                <input
+                                  type="checkbox"
+                                  checked={createVaults.includes(v.id)}
+                                  onChange={(e) => {
+                                    setCreateVaults(prev =>
+                                      e.target.checked ? [...prev, v.id] : prev.filter(id => id !== v.id)
+                                    );
+                                  }}
+                                  className="rounded"
+                                />
+                                <span className="font-mono text-xs text-primary">{v.vault_code}</span>
+                                <span className="text-text-secondary">{v.vault_name}</span>
+                              </label>
+                            ))
                           )}
                         </div>
-                        {selectedVaults.length > 0 && (
-                          <p className="text-xs text-text-muted mt-1">{selectedVaults.length} bóveda(s) seleccionada(s)</p>
-                        )}
                       </div>
                     </>
                   )}
                 </div>
 
-                {createError && (
-                  <p className="text-status-error text-sm">{createError}</p>
-                )}
+                {createError && <p className="text-status-error text-sm">{createError}</p>}
 
                 <div className="flex gap-3 pt-2">
-                  <button type="button" onClick={closeCreate} className="btn-secondary flex-1">
-                    Cancelar
-                  </button>
+                  <button type="button" onClick={closeCreate} className="btn-secondary flex-1">Cancelar</button>
                   <button type="submit" disabled={isSubmitting} className="btn-primary flex-1">
                     {isSubmitting ? 'Creando...' : 'Crear usuario'}
                   </button>
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── Modal: Gestionar bóvedas ─────────────────────────────────────────── */}
+      {vaultModalUser && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-md shadow-xl">
+            <div className="flex items-center justify-between p-5 border-b border-border">
+              <div>
+                <h2 className="text-base font-semibold text-text-primary">Bóvedas asignadas</h2>
+                <p className="text-xs text-text-muted mt-0.5">{vaultModalUser.email}</p>
+              </div>
+              <button onClick={() => setVaultModalUser(null)} className="text-text-muted hover:text-text-primary text-lg leading-none">×</button>
+            </div>
+            <div className="p-5">
+              <div className="border border-border rounded max-h-64 overflow-y-auto p-2 space-y-1 mb-4">
+                {activeVaults.length === 0 ? (
+                  <p className="text-xs text-text-muted px-1 py-2">No hay bóvedas activas disponibles.</p>
+                ) : (
+                  activeVaults.map(v => (
+                    <label key={v.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-surface rounded px-1 py-0.5">
+                      <input
+                        type="checkbox"
+                        checked={editingVaults.includes(v.id)}
+                        onChange={(e) => {
+                          setEditingVaults(prev =>
+                            e.target.checked ? [...prev, v.id] : prev.filter(id => id !== v.id)
+                          );
+                        }}
+                        className="rounded"
+                      />
+                      <span className="font-mono text-xs text-primary">{v.vault_code}</span>
+                      <span className="text-text-secondary">{v.vault_name}</span>
+                    </label>
+                  ))
+                )}
+              </div>
+              {editingVaults.length > 0 && (
+                <p className="text-xs text-text-muted mb-3">{editingVaults.length} bóveda{editingVaults.length > 1 ? 's' : ''} seleccionada{editingVaults.length > 1 ? 's' : ''}</p>
+              )}
+              {vaultError && <p className="text-status-error text-sm mb-3">{vaultError}</p>}
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setVaultModalUser(null)} className="btn-secondary flex-1">Cancelar</button>
+                <button onClick={saveVaults} disabled={vaultSaving} className="btn-primary flex-1">
+                  {vaultSaving ? 'Guardando...' : 'Guardar cambios'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
