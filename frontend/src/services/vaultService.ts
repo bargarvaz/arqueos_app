@@ -1,4 +1,4 @@
-// Servicio de bóvedas, sucursales y personal
+// Servicio de bóvedas y sucursales
 import api from './api';
 
 export interface Branch {
@@ -7,19 +7,12 @@ export interface Branch {
   is_active: boolean;
 }
 
-export interface Personnel {
-  id: number;
-  full_name: string;
-  position: string;
-  personnel_type: 'manager' | 'treasurer';
-  is_active: boolean;
-}
-
 export interface Vault {
   id: number;
   vault_code: string;
   vault_name: string;
   company_id: number;
+  empresa_id: number | null;
   branch_id: number;
   manager_id: number | null;
   treasurer_id: number | null;
@@ -60,15 +53,20 @@ const vaultService = {
     vault_name: string;
     company_id: number;
     branch_id: number;
-    manager_id?: number;
-    treasurer_id?: number;
+    manager_id?: number | null;
+    treasurer_id?: number | null;
     initial_balance: string;
   }): Promise<Vault> => {
     const { data } = await api.post('/vaults/', body);
     return data;
   },
 
-  updateVault: async (id: number, body: Partial<Vault>): Promise<Vault> => {
+  updateVault: async (id: number, body: Partial<{
+    vault_name: string;
+    branch_id: number;
+    manager_id: number | null;
+    treasurer_id: number | null;
+  }>): Promise<Vault> => {
     const { data } = await api.patch(`/vaults/${id}`, body);
     return data;
   },
@@ -101,16 +99,6 @@ const vaultService = {
 
   updateBranch: async (id: number, updates: Partial<Branch>): Promise<Branch> => {
     const { data } = await api.patch(`/vaults/branches/${id}`, updates);
-    return data;
-  },
-
-  // ─── Personal (solo lectura — usado para dropdowns en bóvedas) ───────────
-  listPersonnel: async (params?: {
-    personnel_type?: string;
-    include_inactive?: boolean;
-    search?: string;
-  }): Promise<Personnel[]> => {
-    const { data } = await api.get('/vaults/personnel/list', { params });
     return data;
   },
 };

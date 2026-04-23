@@ -86,10 +86,10 @@ class Vault(Base):
         Integer, ForeignKey("branches.id"), nullable=False
     )
     manager_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("personnel.id"), nullable=True
+        Integer, ForeignKey("users.id"), nullable=True
     )
     treasurer_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("personnel.id"), nullable=True
+        Integer, ForeignKey("users.id"), nullable=True
     )
     initial_balance: Mapped[float] = mapped_column(
         Numeric(15, 2), nullable=False, default=0
@@ -112,9 +112,3 @@ class Vault(Base):
     )
 
     branch: Mapped["Branch"] = relationship("Branch", lazy="joined")
-    manager: Mapped["Personnel | None"] = relationship(
-        "Personnel", foreign_keys=[manager_id], lazy="joined"
-    )
-    treasurer: Mapped["Personnel | None"] = relationship(
-        "Personnel", foreign_keys=[treasurer_id], lazy="joined"
-    )

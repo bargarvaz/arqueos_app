@@ -64,6 +64,7 @@ export default function UserManagement() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [allVaults, setAllVaults] = useState<VaultType[]>([]);
+  const [vaultsLoading, setVaultsLoading] = useState(false);
 
   const {
     register,
@@ -97,8 +98,20 @@ export default function UserManagement() {
 
   useEffect(() => {
     userService.listCompanies().then(setCompanies).catch(() => {});
-    vaultService.listVaults({ page: 1, page_size: 200 }).then(d => setAllVaults(d.items)).catch(() => {});
   }, []);
+
+  const loadVaults = useCallback(async () => {
+    if (allVaults.length > 0) return;
+    setVaultsLoading(true);
+    try {
+      const d = await vaultService.listVaults({ page: 1, page_size: 200, include_inactive: false });
+      setAllVaults(d.items);
+    } catch {
+      // error silencioso — se mostrará "sin bóvedas" en la UI
+    } finally {
+      setVaultsLoading(false);
+    }
+  }, [allVaults.length]);
 
   useEffect(() => {
     if (watchRole === 'etv' && watchCompanyId) {
@@ -132,6 +145,7 @@ export default function UserManagement() {
   };
 
   const openVaultModal = async (user: UserResponse) => {
+    await loadVaults();
     try {
       const detail = await userService.getUser(user.id);
       setVaultModalUser(detail);
@@ -279,7 +293,7 @@ export default function UserManagement() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-semibold text-text-primary">Gestión de Usuarios</h1>
         <button
-          onClick={() => setShowCreateModal(true)}
+          onClick={() => { setShowCreateModal(true); loadVaults(); }}
           className="btn-primary flex items-center gap-2"
         >
           <UserPlus className="w-4 h-4" />
@@ -419,7 +433,9 @@ export default function UserManagement() {
                           )}
                         </label>
                         <div className="border border-border rounded max-h-40 overflow-y-auto p-2 space-y-1">
-                          {activeVaults.length === 0 ? (
+                          {vaultsLoading ? (
+                            <p className="text-xs text-text-muted px-1 py-2">Cargando bóvedas...</p>
+                          ) : activeVaults.length === 0 ? (
                             <p className="text-xs text-text-muted px-1 py-2">No hay bóvedas activas disponibles.</p>
                           ) : (
                             activeVaults.map(v => (

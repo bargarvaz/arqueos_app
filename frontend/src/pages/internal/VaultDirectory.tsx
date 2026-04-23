@@ -7,8 +7,8 @@ import { z } from 'zod';
 import type { ColumnDef } from '@tanstack/react-table';
 
 import DataTable from '@/components/tables/DataTable';
-import vaultService, { type Vault, type Branch, type Personnel } from '@/services/vaultService';
-import userService, { type Company } from '@/services/userService';
+import vaultService, { type Vault, type Branch } from '@/services/vaultService';
+import userService, { type Company, type UserResponse } from '@/services/userService';
 import { formatCurrency } from '@/utils/formatters';
 import { getErrorMessage } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
@@ -45,20 +45,14 @@ export default function VaultDirectory() {
   const [includeInactive, setIncludeInactive] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Datos para selects
   const [companies, setCompanies] = useState<Company[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [personnel, setPersonnel] = useState<Personnel[]>([]);
+  const [etvUsers, setEtvUsers] = useState<UserResponse[]>([]);
 
-  // Modal crear
   const [showCreate, setShowCreate] = useState(false);
   const [createError, setCreateError] = useState('');
-
-  // Modal editar
   const [editTarget, setEditTarget] = useState<Vault | null>(null);
   const [editError, setEditError] = useState('');
-
-  // Modal reactivar
   const [reactivateTarget, setReactivateTarget] = useState<Vault | null>(null);
   const [reactivateBalance, setReactivateBalance] = useState('0.00');
   const [reactivateError, setReactivateError] = useState('');
@@ -93,11 +87,11 @@ export default function VaultDirectory() {
     Promise.all([
       userService.listCompanies(),
       vaultService.listBranches(),
-      vaultService.listPersonnel(),
-    ]).then(([c, b, p]) => {
+      userService.listUsers({ page: 1, page_size: 200, role: 'etv', is_active: true }),
+    ]).then(([c, b, u]) => {
       setCompanies(c);
       setBranches(b);
-      setPersonnel(p);
+      setEtvUsers(u.items);
     }).catch(() => {});
   }, [isAdmin]);
 
@@ -165,8 +159,8 @@ export default function VaultDirectory() {
         vault_name: data.vault_name,
         company_id: data.company_id,
         branch_id: data.branch_id,
-        manager_id: data.manager_id ?? undefined,
-        treasurer_id: data.treasurer_id ?? undefined,
+        manager_id: data.manager_id ?? null,
+        treasurer_id: data.treasurer_id ?? null,
         initial_balance: data.initial_balance,
       });
       setShowCreate(false);
@@ -175,6 +169,12 @@ export default function VaultDirectory() {
     } catch (err) {
       setCreateError(getErrorMessage(err));
     }
+  };
+
+  const getUserName = (id: number | null) => {
+    if (!id) return '—';
+    const u = etvUsers.find(u => u.id === id);
+    return u ? u.full_name : `#${id}`;
   };
 
   const columns: ColumnDef<Vault>[] = [
@@ -191,6 +191,20 @@ export default function VaultDirectory() {
       header: 'Saldo Inicial',
       cell: ({ getValue }) => (
         <span className="font-mono">{formatCurrency(String(getValue()))}</span>
+      ),
+    },
+    {
+      id: 'manager',
+      header: 'Gerente',
+      cell: ({ row }) => (
+        <span className="text-sm text-text-secondary">{getUserName(row.original.manager_id)}</span>
+      ),
+    },
+    {
+      id: 'treasurer',
+      header: 'Tesorero',
+      cell: ({ row }) => (
+        <span className="text-sm text-text-secondary">{getUserName(row.original.treasurer_id)}</span>
       ),
     },
     {
@@ -331,7 +345,7 @@ export default function VaultDirectory() {
                   )}
                 </div>
                 <div>
-                  <label className="label">Empresa</label>
+                  <label className="label">ETV</label>
                   <select
                     className={createForm.formState.errors.company_id ? 'input-error' : 'input'}
                     {...createForm.register('company_id', { valueAsNumber: true })}
@@ -358,25 +372,19 @@ export default function VaultDirectory() {
                 </div>
                 <div>
                   <label className="label">Gerente (opcional)</label>
-                  <select
-                    className="input"
-                    {...createForm.register('manager_id', { valueAsNumber: true })}
-                  >
+                  <select className="input" {...createForm.register('manager_id', { valueAsNumber: true })}>
                     <option value="">Ninguno</option>
-                    {personnel.filter(p => p.is_active && p.personnel_type === 'manager').map(p => (
-                      <option key={p.id} value={p.id}>{p.full_name}</option>
+                    {etvUsers.map(u => (
+                      <option key={u.id} value={u.id}>{u.full_name}{u.puesto ? ` — ${u.puesto}` : ''}</option>
                     ))}
                   </select>
                 </div>
                 <div>
                   <label className="label">Tesorero (opcional)</label>
-                  <select
-                    className="input"
-                    {...createForm.register('treasurer_id', { valueAsNumber: true })}
-                  >
+                  <select className="input" {...createForm.register('treasurer_id', { valueAsNumber: true })}>
                     <option value="">Ninguno</option>
-                    {personnel.filter(p => p.is_active && p.personnel_type === 'treasurer').map(p => (
-                      <option key={p.id} value={p.id}>{p.full_name}</option>
+                    {etvUsers.map(u => (
+                      <option key={u.id} value={u.id}>{u.full_name}{u.puesto ? ` — ${u.puesto}` : ''}</option>
                     ))}
                   </select>
                 </div>
@@ -428,25 +436,19 @@ export default function VaultDirectory() {
                 </div>
                 <div>
                   <label className="label">Gerente</label>
-                  <select
-                    className="input"
-                    {...editForm.register('manager_id', { valueAsNumber: true })}
-                  >
+                  <select className="input" {...editForm.register('manager_id', { valueAsNumber: true })}>
                     <option value="">Ninguno</option>
-                    {personnel.filter(p => p.is_active && p.personnel_type === 'manager').map(p => (
-                      <option key={p.id} value={p.id}>{p.full_name}</option>
+                    {etvUsers.map(u => (
+                      <option key={u.id} value={u.id}>{u.full_name}{u.puesto ? ` — ${u.puesto}` : ''}</option>
                     ))}
                   </select>
                 </div>
                 <div>
                   <label className="label">Tesorero</label>
-                  <select
-                    className="input"
-                    {...editForm.register('treasurer_id', { valueAsNumber: true })}
-                  >
+                  <select className="input" {...editForm.register('treasurer_id', { valueAsNumber: true })}>
                     <option value="">Ninguno</option>
-                    {personnel.filter(p => p.is_active && p.personnel_type === 'treasurer').map(p => (
-                      <option key={p.id} value={p.id}>{p.full_name}</option>
+                    {etvUsers.map(u => (
+                      <option key={u.id} value={u.id}>{u.full_name}{u.puesto ? ` — ${u.puesto}` : ''}</option>
                     ))}
                   </select>
                 </div>
