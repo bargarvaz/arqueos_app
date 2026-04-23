@@ -20,7 +20,6 @@ const CatalogManager = lazy(() => import('@/pages/admin/CatalogManager'));
 const UserManagement = lazy(() => import('@/pages/admin/UserManagement'));
 const AuditLog = lazy(() => import('@/pages/admin/AuditLog'));
 const VaultDirectory = lazy(() => import('@/pages/internal/VaultDirectory'));
-const PersonnelDirectory = lazy(() => import('@/pages/internal/PersonnelDirectory'));
 const Reports = lazy(() => import('@/pages/internal/Reports'));
 const ErrorReports = lazy(() => import('@/pages/internal/ErrorReports'));
 const Dashboard = lazy(() => import('@/pages/internal/Dashboard'));
@@ -98,7 +97,6 @@ export default function AppRouter() {
           <Route path={ROUTES.DASHBOARD} element={<Lazy><Dashboard /></Lazy>} />
           <Route path={ROUTES.ARQUEO_EXPLORER} element={<Lazy><ArqueoExplorer /></Lazy>} />
           <Route path={ROUTES.VAULT_DIRECTORY} element={<Lazy><VaultDirectory /></Lazy>} />
-          <Route path={ROUTES.PERSONNEL_DIRECTORY} element={<Lazy><PersonnelDirectory /></Lazy>} />
           <Route path={ROUTES.REPORTS} element={<Lazy><Reports /></Lazy>} />
           <Route path={ROUTES.ERROR_REPORTS} element={<Lazy><ErrorReports /></Lazy>} />
           <Route

@@ -11,7 +11,6 @@ import {
   LogOut,
   Menu,
   X,
-  BookOpen,
   ClipboardList,
 } from 'lucide-react';
 
@@ -41,11 +40,6 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Directorio de Bóvedas',
     to: ROUTES.VAULT_DIRECTORY,
     icon: <Vault className="w-5 h-5" />,
-  },
-  {
-    label: 'Personal',
-    to: ROUTES.PERSONNEL_DIRECTORY,
-    icon: <BookOpen className="w-5 h-5" />,
   },
   {
     label: 'Reportes de Error',

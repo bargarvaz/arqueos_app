@@ -16,9 +16,9 @@ const createSchema = z.object({
   email: z.string().email('Email inválido.'),
   full_name: z.string().min(2, 'Nombre requerido.'),
   role: z.enum(['admin', 'operations', 'data_science', 'etv']),
-  user_type: z.enum(['internal', 'external']),
-  company_id: z.number().nullable().optional(),   // ETV
-  empresa_id: z.number().nullable().optional(),   // Sub-empresa
+  puesto: z.string().optional(),
+  company_id: z.number().nullable().optional(),
+  empresa_id: z.number().nullable().optional(),
   vault_ids: z.array(z.number()).optional(),
 });
 
@@ -30,6 +30,11 @@ const ROLE_OPTIONS = [
   { value: 'data_science', label: 'Ciencia de Datos' },
   { value: 'etv', label: 'ETV' },
 ];
+
+// user_type se deriva del rol — no se pide al usuario
+function getUserType(role: string) {
+  return role === 'etv' ? 'Externo' : 'Interno';
+}
 
 export default function UserManagement() {
   const [users, setUsers] = useState<UserResponse[]>([]);
@@ -118,7 +123,10 @@ export default function UserManagement() {
     setCreateError('');
     try {
       const { tempPassword: tp } = await userService.createUser({
-        ...data,
+        email: data.email,
+        full_name: data.full_name,
+        role: data.role,
+        puesto: data.puesto || null,
         company_id: data.role === 'etv' ? data.company_id ?? null : null,
         empresa_id: data.role === 'etv' ? data.empresa_id ?? null : null,
         vault_ids: data.role === 'etv' ? selectedVaults : [],
@@ -150,17 +158,17 @@ export default function UserManagement() {
     },
     { accessorKey: 'full_name', header: 'Nombre' },
     {
+      accessorKey: 'puesto',
+      header: 'Puesto',
+      cell: ({ getValue }) => (
+        <span className="text-xs text-text-secondary">{String(getValue() ?? '—')}</span>
+      ),
+    },
+    {
       accessorKey: 'role',
       header: 'Rol',
       cell: ({ getValue }) => (
         <span className="badge-neutral">{formatUserRole(String(getValue()))}</span>
-      ),
-    },
-    {
-      accessorKey: 'user_type',
-      header: 'Tipo',
-      cell: ({ getValue }) => (
-        <span className="text-xs capitalize">{getValue() === 'internal' ? 'Interno' : 'Externo'}</span>
       ),
     },
     {
@@ -305,13 +313,26 @@ export default function UserManagement() {
                         <option key={r.value} value={r.value}>{r.label}</option>
                       ))}
                     </select>
+                    {errors.role && <p className="text-status-error text-xs mt-1">{errors.role.message}</p>}
                   </div>
                   <div>
-                    <label className="label">Tipo</label>
-                    <select className="input" {...register('user_type')}>
-                      <option value="internal">Interno</option>
-                      <option value="external">Externo</option>
-                    </select>
+                    <label className="label">Tipo de usuario</label>
+                    <input
+                      type="text"
+                      readOnly
+                      className="input bg-surface text-text-muted cursor-default"
+                      value={watchRole ? getUserType(watchRole) : '—'}
+                    />
+                    <p className="text-text-muted text-xs mt-1">Se asigna automáticamente por rol</p>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="label">Puesto</label>
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="Ej. Gerente de Operaciones"
+                      {...register('puesto')}
+                    />
                   </div>
 
                   {watchRole === 'etv' && (
@@ -355,7 +376,13 @@ export default function UserManagement() {
                               <span className="text-text-secondary">{v.vault_name}</span>
                             </label>
                           ))}
+                          {vaults.filter(v => v.is_active).length === 0 && (
+                            <p className="text-xs text-text-muted px-1 py-2">No hay bóvedas activas.</p>
+                          )}
                         </div>
+                        {selectedVaults.length > 0 && (
+                          <p className="text-xs text-text-muted mt-1">{selectedVaults.length} bóveda(s) seleccionada(s)</p>
+                        )}
                       </div>
                     </>
                   )}

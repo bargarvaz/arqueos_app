@@ -40,9 +40,10 @@ class UserCreate(BaseModel):
     email: EmailStr
     full_name: str
     role: UserRole
-    user_type: UserType
+    # user_type se deriva del rol: etv → external, resto → internal
     company_id: int | None = None   # ETV (transportadora)
     empresa_id: int | None = None   # Sub-empresa dentro de la ETV
+    puesto: str | None = None
     vault_ids: list[int] = []
 
     @field_validator("company_id")
@@ -55,6 +56,7 @@ class UserCreate(BaseModel):
 
 class UserUpdate(BaseModel):
     full_name: str | None = None
+    puesto: str | None = None
     is_active: bool | None = None
     company_id: int | None = None
     empresa_id: int | None = None
@@ -68,6 +70,7 @@ class UserResponse(BaseModel):
     user_type: UserType
     company_id: int | None     # ETV
     empresa_id: int | None     # Sub-empresa
+    puesto: str | None
     is_active: bool
     must_change_password: bool
     mfa_enabled: bool

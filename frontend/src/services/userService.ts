@@ -22,6 +22,7 @@ export interface UserResponse {
   user_type: string;
   company_id: number | null;    // ETV
   empresa_id: number | null;    // Sub-empresa
+  puesto: string | null;
   is_active: boolean;
   must_change_password: boolean;
   mfa_enabled: boolean;
@@ -35,7 +36,7 @@ export interface CreateUserPayload {
   email: string;
   full_name: string;
   role: string;
-  user_type: string;
+  puesto?: string | null;
   company_id?: number | null;
   empresa_id?: number | null;
   vault_ids?: number[];
@@ -43,6 +44,7 @@ export interface CreateUserPayload {
 
 export interface UpdateUserPayload {
   full_name?: string;
+  puesto?: string | null;
   is_active?: boolean;
   company_id?: number | null;
 }

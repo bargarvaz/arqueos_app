@@ -20,9 +20,9 @@ async def create_user(
     email: str,
     full_name: str,
     role: UserRole,
-    user_type: UserType,
     company_id: int | None,
     empresa_id: int | None = None,
+    puesto: str | None = None,
     vault_ids: list[int],
     created_by_user_id: int,
     ip_address: str | None = None,
@@ -30,6 +30,7 @@ async def create_user(
 ) -> tuple[User, str]:
     """
     Crea un usuario con contraseña temporal de un solo uso.
+    user_type se deriva del rol: etv → external, resto → internal.
     Retorna (usuario, contraseña_temporal).
     """
     # Verificar email único
@@ -39,7 +40,9 @@ async def create_user(
 
     temp_password = generate_temp_password()
 
-    mfa_enabled = user_type == UserType.external  # ETVs tienen MFA habilitado
+    # user_type derivado del rol
+    user_type = UserType.external if role == UserRole.etv else UserType.internal
+    mfa_enabled = user_type == UserType.external
 
     user = User(
         email=email,
@@ -49,6 +52,7 @@ async def create_user(
         user_type=user_type,
         company_id=company_id,
         empresa_id=empresa_id,
+        puesto=puesto,
         is_active=True,
         must_change_password=True,
         mfa_enabled=mfa_enabled,
@@ -136,6 +140,7 @@ async def update_user(
     *,
     updated_by_user_id: int,
     full_name: str | None = None,
+    puesto: str | None = None,
     is_active: bool | None = None,
     company_id: int | None = None,
     ip_address: str | None = None,
@@ -146,12 +151,15 @@ async def update_user(
 
     old_values = {
         "full_name": user.full_name,
+        "puesto": user.puesto,
         "is_active": user.is_active,
         "company_id": user.company_id,
     }
 
     if full_name is not None:
         user.full_name = full_name
+    if puesto is not None:
+        user.puesto = puesto
     if is_active is not None:
         user.is_active = is_active
     if company_id is not None:
