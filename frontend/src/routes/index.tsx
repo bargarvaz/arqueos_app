@@ -22,6 +22,10 @@ const ComingSoon = ({ label }: { label: string }) => (
   </div>
 );
 
+// Lazy imports de páginas implementadas
+const CatalogManager = lazy(() => import('@/pages/admin/CatalogManager'));
+const VaultDirectory = lazy(() => import('@/pages/internal/VaultDirectory'));
+
 // ─── Guardias de ruta ─────────────────────────────────────────────────────────
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -85,7 +89,7 @@ export default function AppRouter() {
         >
           <Route path={ROUTES.DASHBOARD} element={<ComingSoon label="Dashboard" />} />
           <Route path={ROUTES.ARQUEO_EXPLORER} element={<ComingSoon label="Explorador" />} />
-          <Route path={ROUTES.VAULT_DIRECTORY} element={<ComingSoon label="Bóvedas" />} />
+          <Route path={ROUTES.VAULT_DIRECTORY} element={<Suspense fallback={null}><VaultDirectory /></Suspense>} />
           <Route path={ROUTES.PERSONNEL_DIRECTORY} element={<ComingSoon label="Personal" />} />
           <Route path={ROUTES.REPORTS} element={<ComingSoon label="Reportes" />} />
           <Route path={ROUTES.ERROR_REPORTS} element={<ComingSoon label="Reportes de Error" />} />
@@ -101,7 +105,7 @@ export default function AppRouter() {
             path={ROUTES.CATALOG_MANAGER}
             element={
               <RequireRole roles={['admin']}>
-                <ComingSoon label="Catálogos" />
+                <Suspense fallback={null}><CatalogManager /></Suspense>
               </RequireRole>
             }
           />

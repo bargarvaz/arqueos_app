@@ -17,6 +17,8 @@ from app.config import settings
 # Importar modelos para que Alembic los detecte
 from app.users.models import User, Company, UserVaultAssignment  # noqa: F401
 from app.audit.models import AuditLog  # noqa: F401
+from app.catalogs.models import MovementType, ModificationReason, Holiday  # noqa: F401
+from app.vaults.models import Vault, Branch, Personnel  # noqa: F401
 
 config = context.config
 

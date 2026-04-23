@@ -13,6 +13,8 @@ from app.common.security import configure_cors, configure_rate_limiting, configu
 # Routers — se importan aquí para registro
 from app.auth.router import router as auth_router
 from app.users.router import router as users_router
+from app.catalogs.router import router as catalogs_router
+from app.vaults.router import router as vaults_router
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +62,8 @@ API_PREFIX = "/api/v1"
 
 app.include_router(auth_router, prefix=API_PREFIX)
 app.include_router(users_router, prefix=API_PREFIX)
+app.include_router(catalogs_router, prefix=API_PREFIX)
+app.include_router(vaults_router, prefix=API_PREFIX)
 
 
 # ─── Health check ─────────────────────────────────────────────────────────────

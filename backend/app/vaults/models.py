@@ -1,0 +1,117 @@
+# -*- coding: utf-8 -*-
+"""Modelos: Vault, Branch, Personnel."""
+
+from datetime import datetime
+import enum
+
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    func,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.database import Base
+
+
+class PersonnelType(str, enum.Enum):
+    manager = "manager"
+    treasurer = "treasurer"
+
+
+class Branch(Base):
+    """Sucursales."""
+
+    __tablename__ = "branches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class Personnel(Base):
+    """Gerentes y tesoreros asignables a bóvedas."""
+
+    __tablename__ = "personnel"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    full_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    position: Mapped[str] = mapped_column(String(100), nullable=False)
+    personnel_type: Mapped[PersonnelType] = mapped_column(
+        Enum(PersonnelType, name="personnel_type"), nullable=False
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class Vault(Base):
+    """Bóvedas bancarias."""
+
+    __tablename__ = "vaults"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    vault_code: Mapped[str] = mapped_column(
+        String(20), nullable=False, unique=True, index=True
+    )
+    vault_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    company_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("companies.id"), nullable=False
+    )
+    branch_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("branches.id"), nullable=False
+    )
+    manager_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("personnel.id"), nullable=True
+    )
+    treasurer_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("personnel.id"), nullable=True
+    )
+    initial_balance: Mapped[float] = mapped_column(
+        Numeric(15, 2), nullable=False, default=0
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    deactivated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    reactivated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    branch: Mapped["Branch"] = relationship("Branch", lazy="joined")
+    manager: Mapped["Personnel | None"] = relationship(
+        "Personnel", foreign_keys=[manager_id], lazy="joined"
+    )
+    treasurer: Mapped["Personnel | None"] = relationship(
+        "Personnel", foreign_keys=[treasurer_id], lazy="joined"
+    )
