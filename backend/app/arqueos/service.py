@@ -190,6 +190,7 @@ async def get_header(db: AsyncSession, header_id: int) -> ArqueoHeader:
 async def list_headers(
     db: AsyncSession,
     vault_id: int | None = None,
+    vault_ids: list[int] | None = None,
     status: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
@@ -199,7 +200,11 @@ async def list_headers(
     query = select(ArqueoHeader)
     conditions = []
 
-    if vault_id:
+    if vault_ids is not None:
+        if not vault_ids:
+            return [], 0
+        conditions.append(ArqueoHeader.vault_id.in_(vault_ids))
+    elif vault_id:
         conditions.append(ArqueoHeader.vault_id == vault_id)
     if status:
         conditions.append(ArqueoHeader.status == status)

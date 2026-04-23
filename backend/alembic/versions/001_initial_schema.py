@@ -18,14 +18,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # ── Tipos ENUM ───────────────────────────────────────────────────────────
-    op.execute("""
-        CREATE TYPE user_role AS ENUM ('admin', 'operations', 'data_science', 'etv')
-    """)
-    op.execute("""
-        CREATE TYPE user_type AS ENUM ('internal', 'external')
-    """)
-
     # ── companies ────────────────────────────────────────────────────────────
     op.create_table(
         "companies",
@@ -97,9 +89,6 @@ def upgrade() -> None:
     )
 
     # ── personnel (gerentes y tesoreros) ──────────────────────────────────────
-    op.execute("""
-        CREATE TYPE personnel_type AS ENUM ('manager', 'treasurer')
-    """)
     op.create_table(
         "personnel",
         sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),

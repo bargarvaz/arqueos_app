@@ -1,6 +1,6 @@
 // Layout para usuarios internos: sidebar + header + área de contenido
 import { useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet } from 'react-router-dom';
 import {
   LayoutDashboard,
   FileSearch,
@@ -8,7 +8,6 @@ import {
   Users,
   BarChart3,
   Settings,
-  Bell,
   LogOut,
   Menu,
   X,
@@ -82,7 +81,6 @@ const NAV_ITEMS: NavItem[] = [
 
 export default function InternalLayout() {
   const { user, logout } = useAuth();
-  const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const visibleItems = NAV_ITEMS.filter(

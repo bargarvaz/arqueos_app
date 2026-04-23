@@ -64,6 +64,43 @@ async def get_or_create_arqueo_header(
 
 
 @router.get(
+    "/my-history",
+    response_model=PagedResponse[ArqueoHeaderResponse],
+    summary="Historial de arqueos del ETV autenticado",
+)
+async def list_my_arqueo_history(
+    vault_id: int | None = Query(None),
+    status: str | None = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    pagination: PaginationParams = Depends(),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("etv")),
+):
+    """Retorna todos los arqueos de las bóvedas asignadas al ETV, paginados."""
+    from sqlalchemy import select
+    from app.users.models import UserVaultAssignment
+    assigned_q = select(UserVaultAssignment.vault_id).where(
+        UserVaultAssignment.user_id == current_user.id,
+        UserVaultAssignment.is_active == True,
+    )
+    result = await db.execute(assigned_q)
+    all_vault_ids = [row[0] for row in result.fetchall()]
+    vault_ids = [vault_id] if (vault_id and vault_id in all_vault_ids) else all_vault_ids
+
+    headers, total = await service.list_headers(
+        db,
+        vault_ids=vault_ids,
+        status=status,
+        date_from=date_from,
+        date_to=date_to,
+        page=pagination.page,
+        page_size=pagination.page_size,
+    )
+    return PagedResponse.build(headers, total, pagination)
+
+
+@router.get(
     "/headers",
     response_model=PagedResponse[ArqueoHeaderResponse],
     summary="Listar headers de arqueo (usuarios internos)",

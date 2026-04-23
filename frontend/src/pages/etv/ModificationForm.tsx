@@ -1,5 +1,5 @@
 // Formulario de modificación de un arqueo publicado (ETV)
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import arqueoService, { ArqueoHeaderWithRecords, ArqueoRecord } from '@/services/arqueoService';
 import modificationService, { GracePeriod } from '@/services/modificationService';
@@ -135,7 +135,7 @@ export default function ModificationForm() {
       withdrawals: record.withdrawals,
       record_date: record.record_date,
       ...DENOMINATIONS.reduce((acc, d) => {
-        acc[d.key] = (record as Record<string, string>)[d.key] || '0';
+        acc[d.key] = (record as unknown as Record<string, string>)[d.key] || '0';
         return acc;
       }, {} as Record<string, string>),
     });

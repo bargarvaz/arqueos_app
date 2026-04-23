@@ -19,11 +19,6 @@ MODIFICATION_TYPE = ("add", "edit", "delete")
 
 
 def upgrade() -> None:
-    # ── modification_type ENUM ─────────────────────────────────────────────────
-    op.execute(
-        "CREATE TYPE modification_type AS ENUM ('add', 'edit', 'delete')"
-    )
-
     # ── arqueo_modifications ───────────────────────────────────────────────────
     op.create_table(
         "arqueo_modifications",
@@ -42,7 +37,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "modification_type",
-            sa.Enum(*MODIFICATION_TYPE, name="modification_type", create_type=False),
+            sa.Enum(*MODIFICATION_TYPE, name="modification_type"),
             nullable=False,
         ),
         sa.Column(

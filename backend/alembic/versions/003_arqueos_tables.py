@@ -20,16 +20,6 @@ COUNTERPART_TYPE = ("cancellation", "modification")
 
 
 def upgrade() -> None:
-    # ── arqueo_status ENUM ─────────────────────────────────────────────────────
-    op.execute(
-        "CREATE TYPE arqueo_status AS ENUM ('draft', 'published', 'locked')"
-    )
-
-    # ── counterpart_type ENUM ─────────────────────────────────────────────────
-    op.execute(
-        "CREATE TYPE counterpart_type AS ENUM ('cancellation', 'modification')"
-    )
-
     # ── arqueo_headers ─────────────────────────────────────────────────────────
     op.create_table(
         "arqueo_headers",
@@ -56,7 +46,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "status",
-            sa.Enum(*ARQUEO_STATUS, name="arqueo_status", create_type=False),
+            sa.Enum(*ARQUEO_STATUS, name="arqueo_status"),
             nullable=False,
             server_default="draft",
         ),
@@ -136,7 +126,7 @@ def upgrade() -> None:
         sa.Column("is_counterpart", sa.Boolean, nullable=False, server_default="false"),
         sa.Column(
             "counterpart_type",
-            sa.Enum(*COUNTERPART_TYPE, name="counterpart_type", create_type=False),
+            sa.Enum(*COUNTERPART_TYPE, name="counterpart_type"),
             nullable=True,
         ),
         sa.Column("original_record_uid", sa.String(6), nullable=True),

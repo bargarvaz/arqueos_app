@@ -33,7 +33,7 @@ def create_access_token(user_id: int, extra_claims: dict[str, Any] | None = None
     now = datetime.now(timezone.utc)
     expire = now + timedelta(minutes=settings.jwt_access_expire_minutes)
     payload = {
-        "sub": user_id,
+        "sub": str(user_id),
         "exp": expire,
         "iat": now,
         "type": "access",
@@ -47,7 +47,7 @@ def create_refresh_token(user_id: int) -> str:
     now = datetime.now(timezone.utc)
     expire = now + timedelta(hours=settings.jwt_refresh_expire_hours)
     payload = {
-        "sub": user_id,
+        "sub": str(user_id),
         "exp": expire,
         "iat": now,
         "type": "refresh",

@@ -24,16 +24,6 @@ ERROR_REPORT_STATUSES = ("open", "acknowledged", "resolved", "closed")
 
 
 def upgrade() -> None:
-    # ── ENUMs ──────────────────────────────────────────────────────────────────
-    op.execute(
-        "CREATE TYPE notification_type AS ENUM ("
-        + ", ".join(f"'{t}'" for t in NOTIFICATION_TYPES)
-        + ")"
-    )
-    op.execute(
-        "CREATE TYPE error_report_status AS ENUM ('open', 'acknowledged', 'resolved', 'closed')"
-    )
-
     # ── notifications ──────────────────────────────────────────────────────────
     op.create_table(
         "notifications",
@@ -42,7 +32,7 @@ def upgrade() -> None:
         sa.Column("sender_id", sa.Integer, sa.ForeignKey("users.id"), nullable=True),
         sa.Column(
             "notification_type",
-            sa.Enum(*NOTIFICATION_TYPES, name="notification_type", create_type=False),
+            sa.Enum(*NOTIFICATION_TYPES, name="notification_type"),
             nullable=False,
         ),
         sa.Column("title", sa.String(200), nullable=False),
@@ -77,7 +67,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "status",
-            sa.Enum(*ERROR_REPORT_STATUSES, name="error_report_status", create_type=False),
+            sa.Enum(*ERROR_REPORT_STATUSES, name="error_report_status"),
             nullable=False,
             server_default="open",
         ),

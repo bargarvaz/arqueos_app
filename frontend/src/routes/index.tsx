@@ -15,22 +15,30 @@ import ChangePassword from '@/pages/auth/ChangePassword';
 import InternalLayout from '@/layouts/InternalLayout';
 import ExternalLayout from '@/layouts/ExternalLayout';
 
-// Placeholder para páginas aún no implementadas
-const ComingSoon = ({ label }: { label: string }) => (
-  <div className="flex items-center justify-center h-64 text-text-muted text-sm">
-    {label} — En construcción
-  </div>
-);
-
-// Lazy imports de páginas implementadas
+// Lazy imports — internas
 const CatalogManager = lazy(() => import('@/pages/admin/CatalogManager'));
+const UserManagement = lazy(() => import('@/pages/admin/UserManagement'));
+const AuditLog = lazy(() => import('@/pages/admin/AuditLog'));
 const VaultDirectory = lazy(() => import('@/pages/internal/VaultDirectory'));
-const EtvVaults = lazy(() => import('@/pages/etv/EtvVaults'));
-const ArqueoForm = lazy(() => import('@/pages/etv/ArqueoForm'));
-const ModificationList = lazy(() => import('@/pages/etv/ModificationList'));
-const ModificationForm = lazy(() => import('@/pages/etv/ModificationForm'));
+const PersonnelDirectory = lazy(() => import('@/pages/internal/PersonnelDirectory'));
+const Reports = lazy(() => import('@/pages/internal/Reports'));
+const ErrorReports = lazy(() => import('@/pages/internal/ErrorReports'));
 const Dashboard = lazy(() => import('@/pages/internal/Dashboard'));
 const ArqueoExplorer = lazy(() => import('@/pages/internal/ArqueoExplorer'));
+
+// Lazy imports — ETV
+const EtvVaults = lazy(() => import('@/pages/etv/EtvVaults'));
+const ArqueoForm = lazy(() => import('@/pages/etv/ArqueoForm'));
+const EtvArqueoList = lazy(() => import('@/pages/etv/EtvArqueoList'));
+const ModificationList = lazy(() => import('@/pages/etv/ModificationList'));
+const ModificationForm = lazy(() => import('@/pages/etv/ModificationForm'));
+const EtvErrorReports = lazy(() => import('@/pages/etv/EtvErrorReports'));
+
+const Lazy = ({ children }: { children: React.ReactNode }) => (
+  <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted text-sm">Cargando...</div>}>
+    {children}
+  </Suspense>
+);
 
 // ─── Guardias de ruta ─────────────────────────────────────────────────────────
 
@@ -40,13 +48,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function RequireRole({
-  roles,
-  children,
-}: {
-  roles: string[];
-  children: React.ReactNode;
-}) {
+function RequireRole({ roles, children }: { roles: string[]; children: React.ReactNode }) {
   const { user } = useAuthStore();
   if (!user || !roles.includes(user.role)) {
     return <Navigate to={ROUTES.INTERNAL_LOGIN} replace />;
@@ -93,17 +95,17 @@ export default function AppRouter() {
             </RequireAuth>
           }
         >
-          <Route path={ROUTES.DASHBOARD} element={<Suspense fallback={null}><Dashboard /></Suspense>} />
-          <Route path={ROUTES.ARQUEO_EXPLORER} element={<Suspense fallback={null}><ArqueoExplorer /></Suspense>} />
-          <Route path={ROUTES.VAULT_DIRECTORY} element={<Suspense fallback={null}><VaultDirectory /></Suspense>} />
-          <Route path={ROUTES.PERSONNEL_DIRECTORY} element={<ComingSoon label="Personal" />} />
-          <Route path={ROUTES.REPORTS} element={<ComingSoon label="Reportes" />} />
-          <Route path={ROUTES.ERROR_REPORTS} element={<ComingSoon label="Reportes de Error" />} />
+          <Route path={ROUTES.DASHBOARD} element={<Lazy><Dashboard /></Lazy>} />
+          <Route path={ROUTES.ARQUEO_EXPLORER} element={<Lazy><ArqueoExplorer /></Lazy>} />
+          <Route path={ROUTES.VAULT_DIRECTORY} element={<Lazy><VaultDirectory /></Lazy>} />
+          <Route path={ROUTES.PERSONNEL_DIRECTORY} element={<Lazy><PersonnelDirectory /></Lazy>} />
+          <Route path={ROUTES.REPORTS} element={<Lazy><Reports /></Lazy>} />
+          <Route path={ROUTES.ERROR_REPORTS} element={<Lazy><ErrorReports /></Lazy>} />
           <Route
             path={ROUTES.USER_MANAGEMENT}
             element={
               <RequireRole roles={['admin']}>
-                <ComingSoon label="Usuarios" />
+                <Lazy><UserManagement /></Lazy>
               </RequireRole>
             }
           />
@@ -111,7 +113,7 @@ export default function AppRouter() {
             path={ROUTES.CATALOG_MANAGER}
             element={
               <RequireRole roles={['admin']}>
-                <Suspense fallback={null}><CatalogManager /></Suspense>
+                <Lazy><CatalogManager /></Lazy>
               </RequireRole>
             }
           />
@@ -119,7 +121,7 @@ export default function AppRouter() {
             path={ROUTES.AUDIT_LOG}
             element={
               <RequireRole roles={['admin']}>
-                <ComingSoon label="Auditoría" />
+                <Lazy><AuditLog /></Lazy>
               </RequireRole>
             }
           />
@@ -137,15 +139,12 @@ export default function AppRouter() {
             </RequireAuth>
           }
         >
-          <Route path={ROUTES.ETV_VAULTS} element={<Suspense fallback={null}><EtvVaults /></Suspense>} />
-          <Route path={ROUTES.ETV_ARQUEO_FORM} element={<Suspense fallback={null}><ArqueoForm /></Suspense>} />
-          <Route path={ROUTES.ETV_ARQUEO_LIST} element={<ComingSoon label="Mis Arqueos" />} />
-          <Route path={ROUTES.ETV_MODIFICATIONS} element={<Suspense fallback={null}><ModificationList /></Suspense>} />
-          <Route path={`${ROUTES.ETV_MODIFICATIONS}/:headerId`} element={<Suspense fallback={null}><ModificationForm /></Suspense>} />
-          <Route
-            path={ROUTES.ETV_ERROR_REPORTS}
-            element={<ComingSoon label="Reportes de Error ETV" />}
-          />
+          <Route path={ROUTES.ETV_VAULTS} element={<Lazy><EtvVaults /></Lazy>} />
+          <Route path={ROUTES.ETV_ARQUEO_FORM} element={<Lazy><ArqueoForm /></Lazy>} />
+          <Route path={ROUTES.ETV_ARQUEO_LIST} element={<Lazy><EtvArqueoList /></Lazy>} />
+          <Route path={ROUTES.ETV_MODIFICATIONS} element={<Lazy><ModificationList /></Lazy>} />
+          <Route path={`${ROUTES.ETV_MODIFICATIONS}/:headerId`} element={<Lazy><ModificationForm /></Lazy>} />
+          <Route path={ROUTES.ETV_ERROR_REPORTS} element={<Lazy><EtvErrorReports /></Lazy>} />
         </Route>
 
         {/* Redireccionamiento por defecto */}

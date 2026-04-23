@@ -74,14 +74,14 @@ function emptyRecord(date: string): RecordValues {
   } as RecordValues;
 
   for (const d of DENOMINATIONS) {
-    (base as Record<string, string>)[d.key] = '0';
+    (base as unknown as Record<string, string>)[d.key] = '0';
   }
   return base;
 }
 
 function calcDenomSum(record: RecordValues): number {
   return DENOMINATIONS.reduce((acc, d) => {
-    return acc + (parseFloat((record as Record<string, string>)[d.key] || '0') || 0);
+    return acc + (parseFloat((record as unknown as Record<string, string>)[d.key] || '0') || 0);
   }, 0);
 }
 
@@ -118,8 +118,6 @@ export default function ArqueoForm() {
     control,
     watch,
     handleSubmit,
-    setValue,
-    getValues,
     formState: { errors },
     reset,
   } = useForm<FormValues>({
