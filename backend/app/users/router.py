@@ -25,6 +25,157 @@ router = APIRouter(prefix="/users", tags=["Usuarios"])
 AdminUser = Depends(require_admin())
 
 
+# ─── ETVs (rutas específicas ANTES que /{user_id}) ───────────────────────────
+
+@router.get("/companies", response_model=list[CompanyResponse])
+async def list_companies(
+    db: DbSession,
+    current_user=Depends(get_current_user),
+    include_inactive: bool = Query(default=False),
+):
+    """Lista ETVs. Sin filtro de inactivos por defecto."""
+    from sqlalchemy import select
+    from app.users.models import Company
+    q = select(Company).order_by(Company.name)
+    if not include_inactive:
+        q = q.where(Company.is_active == True)
+    result = await db.execute(q)
+    return result.scalars().all()
+
+
+@router.post("/companies", response_model=CompanyResponse, status_code=status.HTTP_201_CREATED)
+async def create_company(body: CompanyCreate, db: DbSession, admin=AdminUser):
+    """Crea una ETV."""
+    from sqlalchemy import select
+    from sqlalchemy.exc import IntegrityError
+    from app.users.models import Company
+    from fastapi import HTTPException
+    existing = await db.execute(select(Company).where(Company.name == body.name))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail=f"Ya existe una ETV con el nombre '{body.name}'.")
+    company = Company(name=body.name)
+    db.add(company)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=f"Ya existe una ETV con el nombre '{body.name}'.")
+    await db.refresh(company)
+    return company
+
+
+@router.patch("/companies/{company_id}/toggle", response_model=CompanyResponse)
+async def toggle_company(company_id: int, db: DbSession, admin=AdminUser):
+    """Activa o desactiva una ETV."""
+    from sqlalchemy import select
+    from app.users.models import Company
+    from fastapi import HTTPException
+    result = await db.execute(select(Company).where(Company.id == company_id))
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="ETV no encontrada.")
+    company.is_active = not company.is_active
+    await db.commit()
+    await db.refresh(company)
+    return company
+
+
+@router.patch("/companies/{company_id}", response_model=CompanyResponse)
+async def update_company(company_id: int, body: CompanyCreate, db: DbSession, admin=AdminUser):
+    """Actualiza nombre de una ETV."""
+    from sqlalchemy import select
+    from app.users.models import Company
+    from fastapi import HTTPException
+    result = await db.execute(select(Company).where(Company.id == company_id))
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="ETV no encontrada.")
+    if body.name is not None:
+        company.name = body.name
+    await db.commit()
+    await db.refresh(company)
+    return company
+
+
+# ─── Sub-empresas (rutas específicas ANTES que /{user_id}) ───────────────────
+
+@router.get("/empresas", response_model=list[EmpresaResponse])
+async def list_empresas(
+    db: DbSession,
+    current_user=Depends(get_current_user),
+    etv_id: int | None = Query(default=None),
+    include_inactive: bool = Query(default=False),
+):
+    """Lista sub-empresas, opcionalmente filtradas por ETV."""
+    from sqlalchemy import select
+    from app.users.models import Empresa
+    q = select(Empresa).order_by(Empresa.name)
+    if etv_id:
+        q = q.where(Empresa.etv_id == etv_id)
+    if not include_inactive:
+        q = q.where(Empresa.is_active == True)
+    result = await db.execute(q)
+    return result.scalars().all()
+
+
+@router.post("/empresas", response_model=EmpresaResponse, status_code=status.HTTP_201_CREATED)
+async def create_empresa(body: EmpresaCreate, db: DbSession, admin=AdminUser):
+    """Crea una sub-empresa dentro de una ETV."""
+    from sqlalchemy import select
+    from sqlalchemy.exc import IntegrityError
+    from app.users.models import Empresa
+    from fastapi import HTTPException
+    existing = await db.execute(
+        select(Empresa).where(Empresa.name == body.name, Empresa.etv_id == body.etv_id)
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Ya existe una empresa con ese nombre en la ETV seleccionada.")
+    empresa = Empresa(name=body.name, etv_id=body.etv_id)
+    db.add(empresa)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Error al crear la empresa.")
+    await db.refresh(empresa)
+    return empresa
+
+
+@router.patch("/empresas/{empresa_id}/toggle", response_model=EmpresaResponse)
+async def toggle_empresa(empresa_id: int, db: DbSession, admin=AdminUser):
+    """Activa o desactiva una sub-empresa."""
+    from sqlalchemy import select
+    from app.users.models import Empresa
+    from fastapi import HTTPException
+    result = await db.execute(select(Empresa).where(Empresa.id == empresa_id))
+    empresa = result.scalar_one_or_none()
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada.")
+    empresa.is_active = not empresa.is_active
+    await db.commit()
+    await db.refresh(empresa)
+    return empresa
+
+
+@router.patch("/empresas/{empresa_id}", response_model=EmpresaResponse)
+async def update_empresa(empresa_id: int, body: EmpresaUpdate, db: DbSession, admin=AdminUser):
+    """Actualiza nombre o ETV de una sub-empresa."""
+    from sqlalchemy import select
+    from app.users.models import Empresa
+    from fastapi import HTTPException
+    result = await db.execute(select(Empresa).where(Empresa.id == empresa_id))
+    empresa = result.scalar_one_or_none()
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada.")
+    if body.name is not None:
+        empresa.name = body.name
+    if body.etv_id is not None:
+        empresa.etv_id = body.etv_id
+    await db.commit()
+    await db.refresh(empresa)
+    return empresa
+
+
 # ─── Usuarios ─────────────────────────────────────────────────────────────────
 
 @router.post("/", response_model=UserDetailResponse, status_code=status.HTTP_201_CREATED)
@@ -52,7 +203,6 @@ async def create_user(
         user_agent=ua,
     )
 
-    # La contraseña temporal se incluye en headers para que el Admin la vea (solo este request)
     from fastapi.responses import JSONResponse
     vault_ids = await user_service.get_user_assigned_vault_ids(db, user.id)
     response_data = UserDetailResponse.model_validate(user).model_dump()
@@ -82,6 +232,8 @@ async def list_users(
     )
     return PagedResponse.build(users, total, params)
 
+
+# ─── Rutas con /{user_id} AL FINAL para no capturar rutas específicas ─────────
 
 @router.get("/{user_id}", response_model=UserDetailResponse)
 async def get_user(user_id: int, db: DbSession, admin=AdminUser):
@@ -124,7 +276,7 @@ async def reset_password(
     db: DbSession,
     admin=AdminUser,
 ):
-    """Restablece la contraseña de un usuario. Solo Admin. Muestra temporal una sola vez."""
+    """Restablece la contraseña de un usuario. Solo Admin."""
     ip = request.client.host if request.client else None
     ua = request.headers.get("user-agent")
     temp_password = await user_service.reset_password(
@@ -156,146 +308,3 @@ async def assign_vaults(
         ip_address=ip,
         user_agent=ua,
     )
-
-
-# ─── Empresas ─────────────────────────────────────────────────────────────────
-
-@router.post("/companies", response_model=CompanyResponse, status_code=status.HTTP_201_CREATED)
-async def create_company(body: CompanyCreate, db: DbSession, admin=AdminUser):
-    """Crea una empresa ETV."""
-    from app.users.models import Company
-    company = Company(name=body.name)
-    db.add(company)
-    await db.commit()
-    await db.refresh(company)
-    return company
-
-
-@router.get("/companies", response_model=list[CompanyResponse])
-async def list_companies(
-    db: DbSession,
-    current_user=Depends(get_current_user),
-    include_inactive: bool = Query(default=False),
-):
-    """Lista empresas ETV. Sin filtro de inactivos por defecto."""
-    from sqlalchemy import select
-    from app.users.models import Company
-    q = select(Company).order_by(Company.name)
-    if not include_inactive:
-        q = q.where(Company.is_active == True)
-    result = await db.execute(q)
-    return result.scalars().all()
-
-
-@router.patch("/companies/{company_id}", response_model=CompanyResponse)
-async def update_company(
-    company_id: int,
-    body: CompanyCreate,
-    db: DbSession,
-    admin=AdminUser,
-):
-    """Actualiza nombre o estado de una empresa ETV."""
-    from sqlalchemy import select
-    from app.users.models import Company
-    result = await db.execute(select(Company).where(Company.id == company_id))
-    company = result.scalar_one_or_none()
-    if not company:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="Empresa no encontrada.")
-    if body.name is not None:
-        company.name = body.name
-    await db.commit()
-    await db.refresh(company)
-    return company
-
-
-@router.patch("/companies/{company_id}/toggle", response_model=CompanyResponse)
-async def toggle_company(
-    company_id: int,
-    db: DbSession,
-    admin=AdminUser,
-):
-    """Activa o desactiva una ETV."""
-    from sqlalchemy import select
-    from app.users.models import Company
-    result = await db.execute(select(Company).where(Company.id == company_id))
-    company = result.scalar_one_or_none()
-    if not company:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="ETV no encontrada.")
-    company.is_active = not company.is_active
-    await db.commit()
-    await db.refresh(company)
-    return company
-
-
-# ─── Sub-empresas ─────────────────────────────────────────────────────────────
-
-@router.get("/empresas", response_model=list[EmpresaResponse])
-async def list_empresas(
-    db: DbSession,
-    current_user=Depends(get_current_user),
-    etv_id: int | None = Query(default=None),
-    include_inactive: bool = Query(default=False),
-):
-    """Lista sub-empresas, opcionalmente filtradas por ETV."""
-    from sqlalchemy import select
-    from app.users.models import Empresa
-    q = select(Empresa).order_by(Empresa.name)
-    if etv_id:
-        q = q.where(Empresa.etv_id == etv_id)
-    if not include_inactive:
-        q = q.where(Empresa.is_active == True)
-    result = await db.execute(q)
-    return result.scalars().all()
-
-
-@router.post("/empresas", response_model=EmpresaResponse, status_code=status.HTTP_201_CREATED)
-async def create_empresa(body: EmpresaCreate, db: DbSession, admin=AdminUser):
-    """Crea una sub-empresa dentro de una ETV."""
-    from app.users.models import Empresa
-    empresa = Empresa(name=body.name, etv_id=body.etv_id)
-    db.add(empresa)
-    await db.commit()
-    await db.refresh(empresa)
-    return empresa
-
-
-@router.patch("/empresas/{empresa_id}", response_model=EmpresaResponse)
-async def update_empresa(
-    empresa_id: int,
-    body: EmpresaUpdate,
-    db: DbSession,
-    admin=AdminUser,
-):
-    """Actualiza nombre o ETV de una sub-empresa."""
-    from sqlalchemy import select
-    from app.users.models import Empresa
-    from fastapi import HTTPException
-    result = await db.execute(select(Empresa).where(Empresa.id == empresa_id))
-    empresa = result.scalar_one_or_none()
-    if not empresa:
-        raise HTTPException(status_code=404, detail="Empresa no encontrada.")
-    if body.name is not None:
-        empresa.name = body.name
-    if body.etv_id is not None:
-        empresa.etv_id = body.etv_id
-    await db.commit()
-    await db.refresh(empresa)
-    return empresa
-
-
-@router.patch("/empresas/{empresa_id}/toggle", response_model=EmpresaResponse)
-async def toggle_empresa(empresa_id: int, db: DbSession, admin=AdminUser):
-    """Activa o desactiva una sub-empresa."""
-    from sqlalchemy import select
-    from app.users.models import Empresa
-    from fastapi import HTTPException
-    result = await db.execute(select(Empresa).where(Empresa.id == empresa_id))
-    empresa = result.scalar_one_or_none()
-    if not empresa:
-        raise HTTPException(status_code=404, detail="Empresa no encontrada.")
-    empresa.is_active = not empresa.is_active
-    await db.commit()
-    await db.refresh(empresa)
-    return empresa
