@@ -19,6 +19,11 @@ from app.users.models import User, Company, UserVaultAssignment  # noqa: F401
 from app.audit.models import AuditLog  # noqa: F401
 from app.catalogs.models import MovementType, ModificationReason, Holiday  # noqa: F401
 from app.vaults.models import Vault, Branch, Personnel  # noqa: F401
+from app.arqueos.models import ArqueoHeader, ArqueoRecord  # noqa: F401
+from app.modifications.models import ArqueoModification  # noqa: F401
+from app.documents.models import Certificate  # noqa: F401
+from app.notifications.models import Notification  # noqa: F401
+from app.error_reports.models import ErrorReport, ErrorReportRecord  # noqa: F401
 
 config = context.config
 

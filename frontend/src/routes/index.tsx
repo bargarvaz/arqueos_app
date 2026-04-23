@@ -25,6 +25,12 @@ const ComingSoon = ({ label }: { label: string }) => (
 // Lazy imports de páginas implementadas
 const CatalogManager = lazy(() => import('@/pages/admin/CatalogManager'));
 const VaultDirectory = lazy(() => import('@/pages/internal/VaultDirectory'));
+const EtvVaults = lazy(() => import('@/pages/etv/EtvVaults'));
+const ArqueoForm = lazy(() => import('@/pages/etv/ArqueoForm'));
+const ModificationList = lazy(() => import('@/pages/etv/ModificationList'));
+const ModificationForm = lazy(() => import('@/pages/etv/ModificationForm'));
+const Dashboard = lazy(() => import('@/pages/internal/Dashboard'));
+const ArqueoExplorer = lazy(() => import('@/pages/internal/ArqueoExplorer'));
 
 // ─── Guardias de ruta ─────────────────────────────────────────────────────────
 
@@ -87,8 +93,8 @@ export default function AppRouter() {
             </RequireAuth>
           }
         >
-          <Route path={ROUTES.DASHBOARD} element={<ComingSoon label="Dashboard" />} />
-          <Route path={ROUTES.ARQUEO_EXPLORER} element={<ComingSoon label="Explorador" />} />
+          <Route path={ROUTES.DASHBOARD} element={<Suspense fallback={null}><Dashboard /></Suspense>} />
+          <Route path={ROUTES.ARQUEO_EXPLORER} element={<Suspense fallback={null}><ArqueoExplorer /></Suspense>} />
           <Route path={ROUTES.VAULT_DIRECTORY} element={<Suspense fallback={null}><VaultDirectory /></Suspense>} />
           <Route path={ROUTES.PERSONNEL_DIRECTORY} element={<ComingSoon label="Personal" />} />
           <Route path={ROUTES.REPORTS} element={<ComingSoon label="Reportes" />} />
@@ -131,13 +137,11 @@ export default function AppRouter() {
             </RequireAuth>
           }
         >
-          <Route path={ROUTES.ETV_VAULTS} element={<ComingSoon label="Mis Bóvedas" />} />
-          <Route path={ROUTES.ETV_ARQUEO_FORM} element={<ComingSoon label="Formulario Arqueo" />} />
+          <Route path={ROUTES.ETV_VAULTS} element={<Suspense fallback={null}><EtvVaults /></Suspense>} />
+          <Route path={ROUTES.ETV_ARQUEO_FORM} element={<Suspense fallback={null}><ArqueoForm /></Suspense>} />
           <Route path={ROUTES.ETV_ARQUEO_LIST} element={<ComingSoon label="Mis Arqueos" />} />
-          <Route
-            path={ROUTES.ETV_MODIFICATIONS}
-            element={<ComingSoon label="Modificaciones" />}
-          />
+          <Route path={ROUTES.ETV_MODIFICATIONS} element={<Suspense fallback={null}><ModificationList /></Suspense>} />
+          <Route path={`${ROUTES.ETV_MODIFICATIONS}/:headerId`} element={<Suspense fallback={null}><ModificationForm /></Suspense>} />
           <Route
             path={ROUTES.ETV_ERROR_REPORTS}
             element={<ComingSoon label="Reportes de Error ETV" />}

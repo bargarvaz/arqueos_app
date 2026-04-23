@@ -7,6 +7,8 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, and_
 
+import asyncio
+
 from app.vaults.models import Vault, Branch, Personnel
 from app.audit.service import log_action
 from app.common.exceptions import NotFoundError, ConflictError
@@ -265,7 +267,23 @@ async def reactivate_vault(
     )
     await db.commit()
     await db.refresh(vault)
+
+    # Notificar reactivación (no bloquea la respuesta)
+    _vault_id = vault.id
+    asyncio.create_task(_notify_reactivation_task(_vault_id))
+
     return vault
+
+
+async def _notify_reactivation_task(vault_id: int) -> None:
+    """Envía notificación de reactivación de bóveda en sesión separada."""
+    try:
+        from app.database import AsyncSessionLocal
+        from app.notifications.service import notify_vault_reactivated
+        async with AsyncSessionLocal() as db:
+            await notify_vault_reactivated(db, vault_id=vault_id)
+    except Exception:
+        pass
 
 
 async def set_initial_balance(

@@ -129,14 +129,14 @@ arqueos_app/
 ## Etapas de desarrollo
 
 1. ✅ Infraestructura y autenticación
-2. 🔄 Catálogos y bóvedas
-3. ⏳ Módulo de arqueos (captura y publicación)
-4. ⏳ Módulo de modificaciones
-5. ⏳ Documentos PDF (MinIO)
-6. ⏳ Dashboard y reportes
-7. ⏳ Notificaciones y reporte de errores
-8. ⏳ Explorador y panel admin
-9. ⏳ QA, hardening y documentación
+2. ✅ Catálogos y bóvedas
+3. ✅ Módulo de arqueos (captura y publicación)
+4. ✅ Módulo de modificaciones
+5. ✅ Documentos PDF (MinIO)
+6. ✅ Dashboard y reportes
+7. ✅ Notificaciones y reporte de errores
+8. ✅ Explorador y panel admin
+9. ✅ QA, hardening y documentación
 
 ## Seguridad
 
