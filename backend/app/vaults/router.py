@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Router de bóvedas, sucursales y personal."""
+"""Router de bóvedas y sucursales.
+
+IMPORTANTE: Las rutas específicas (/branches/*, /personnel/*)
+deben ir ANTES de /{vault_id} para que FastAPI no las capture como int.
+"""
 
 from fastapi import APIRouter, Depends, Request, Query, status
 
@@ -7,7 +11,7 @@ from app.vaults import service as vault_service
 from app.vaults.schemas import (
     VaultCreate, VaultUpdate, VaultResponse, SetInitialBalanceRequest,
     BranchCreate, BranchUpdate, BranchResponse,
-    PersonnelCreate, PersonnelUpdate, PersonnelResponse,
+    PersonnelResponse,
 )
 from app.common.pagination import PaginationParams, PagedResponse
 from app.dependencies import require_admin, get_current_user, DbSession
@@ -17,7 +21,46 @@ router = APIRouter(prefix="/vaults", tags=["Bóvedas"])
 AdminUser = Depends(require_admin())
 
 
-# ─── Bóvedas ─────────────────────────────────────────────────────────────────
+# ─── Sucursales (ANTES de /{vault_id}) ───────────────────────────────────────
+
+@router.get("/branches/list", response_model=list[BranchResponse])
+async def list_branches(
+    db: DbSession,
+    _=Depends(get_current_user),
+    include_inactive: bool = Query(default=False),
+    search: str | None = Query(default=None),
+):
+    return await vault_service.list_branches(db, include_inactive, search)
+
+
+@router.post("/branches", response_model=BranchResponse, status_code=status.HTTP_201_CREATED)
+async def create_branch(body: BranchCreate, db: DbSession, admin=AdminUser):
+    return await vault_service.create_branch(db, body.name)
+
+
+@router.patch("/branches/{branch_id}", response_model=BranchResponse)
+async def update_branch(branch_id: int, body: BranchUpdate, db: DbSession, admin=AdminUser):
+    return await vault_service.update_branch(
+        db, branch_id, name=body.name, is_active=body.is_active
+    )
+
+
+# ─── Personal (solo lectura — mantener para compatibilidad de datos) ──────────
+
+@router.get("/personnel/list", response_model=list[PersonnelResponse])
+async def list_personnel(
+    db: DbSession,
+    _=Depends(get_current_user),
+    personnel_type: str | None = Query(default=None),
+    include_inactive: bool = Query(default=False),
+    search: str | None = Query(default=None),
+):
+    return await vault_service.list_personnel(
+        db, personnel_type=personnel_type, include_inactive=include_inactive, search=search
+    )
+
+
+# ─── Bóvedas ──────────────────────────────────────────────────────────────────
 
 @router.post("/", response_model=VaultResponse, status_code=status.HTTP_201_CREATED)
 async def create_vault(
@@ -56,6 +99,8 @@ async def list_vaults(
     )
     return PagedResponse.build(vaults, total, params)
 
+
+# ─── Rutas con /{vault_id} AL FINAL ──────────────────────────────────────────
 
 @router.get("/{vault_id}", response_model=VaultResponse)
 async def get_vault(vault_id: int, db: DbSession, _=Depends(get_current_user)):
@@ -110,65 +155,4 @@ async def set_initial_balance(
     ua = request.headers.get("user-agent")
     return await vault_service.set_initial_balance(
         db, vault_id, body.initial_balance, admin.id, ip, ua
-    )
-
-
-# ─── Sucursales ───────────────────────────────────────────────────────────────
-
-@router.get("/branches/list", response_model=list[BranchResponse])
-async def list_branches(
-    db: DbSession,
-    _=Depends(get_current_user),
-    include_inactive: bool = Query(default=False),
-    search: str | None = Query(default=None),
-):
-    return await vault_service.list_branches(db, include_inactive, search)
-
-
-@router.post(
-    "/branches", response_model=BranchResponse, status_code=status.HTTP_201_CREATED
-)
-async def create_branch(body: BranchCreate, db: DbSession, admin=AdminUser):
-    return await vault_service.create_branch(db, body.name)
-
-
-@router.patch("/branches/{branch_id}", response_model=BranchResponse)
-async def update_branch(
-    branch_id: int, body: BranchUpdate, db: DbSession, admin=AdminUser
-):
-    return await vault_service.update_branch(
-        db, branch_id, name=body.name, is_active=body.is_active
-    )
-
-
-# ─── Personal ─────────────────────────────────────────────────────────────────
-
-@router.get("/personnel/list", response_model=list[PersonnelResponse])
-async def list_personnel(
-    db: DbSession,
-    _=Depends(get_current_user),
-    personnel_type: str | None = Query(default=None),
-    include_inactive: bool = Query(default=False),
-    search: str | None = Query(default=None),
-):
-    return await vault_service.list_personnel(
-        db, personnel_type=personnel_type, include_inactive=include_inactive, search=search
-    )
-
-
-@router.post(
-    "/personnel", response_model=PersonnelResponse, status_code=status.HTTP_201_CREATED
-)
-async def create_personnel(body: PersonnelCreate, db: DbSession, admin=AdminUser):
-    return await vault_service.create_personnel(
-        db, body.full_name, body.position, body.personnel_type
-    )
-
-
-@router.patch("/personnel/{person_id}", response_model=PersonnelResponse)
-async def update_personnel(
-    person_id: int, body: PersonnelUpdate, db: DbSession, admin=AdminUser
-):
-    return await vault_service.update_personnel(
-        db, person_id, full_name=body.full_name, position=body.position, is_active=body.is_active
     )
