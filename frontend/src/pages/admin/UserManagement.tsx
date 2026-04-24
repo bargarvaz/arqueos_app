@@ -104,7 +104,7 @@ export default function UserManagement() {
     if (allVaults.length > 0) return;
     setVaultsLoading(true);
     try {
-      const d = await vaultService.listVaults({ page: 1, page_size: 200, include_inactive: false });
+      const d = await vaultService.listVaults({ page: 1, page_size: 0, include_inactive: false });
       setAllVaults(d.items);
     } catch {
       // error silencioso — se mostrará "sin bóvedas" en la UI

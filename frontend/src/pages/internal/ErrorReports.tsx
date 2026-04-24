@@ -72,7 +72,7 @@ export default function ErrorReports() {
 
   useEffect(() => {
     if (canCreate) {
-      userService.listUsers({ role: 'etv', is_active: true, page_size: 200 })
+      userService.listUsers({ role: 'etv', is_active: true, page_size: 0 })
         .then(d => setEtvUsers(d.items))
         .catch(() => {});
     }

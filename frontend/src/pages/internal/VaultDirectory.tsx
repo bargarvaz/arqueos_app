@@ -87,7 +87,7 @@ export default function VaultDirectory() {
     Promise.all([
       userService.listCompanies(),
       vaultService.listBranches(),
-      userService.listUsers({ page: 1, page_size: 200, role: 'etv', is_active: true }),
+      userService.listUsers({ page: 1, page_size: 0, role: 'etv', is_active: true }),
     ]).then(([c, b, u]) => {
       setCompanies(c);
       setBranches(b);
