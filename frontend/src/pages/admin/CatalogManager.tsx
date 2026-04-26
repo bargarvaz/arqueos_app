@@ -15,7 +15,7 @@ import vaultService, { type Vault, type Branch } from '@/services/vaultService';
 import { formatCurrency } from '@/utils/formatters';
 import { getErrorMessage } from '@/services/api';
 
-type CatalogTab = 'movement_types' | 'modification_reasons' | 'holidays' | 'etvs' | 'empresas' | 'branches' | 'sucursales' | 'vaults';
+type CatalogTab = 'movement_types' | 'modification_reasons' | 'holidays' | 'etvs' | 'empresas' | 'sucursales' | 'vaults';
 
 export default function CatalogManager() {
   const [activeTab, setActiveTab] = useState<CatalogTab>('movement_types');
@@ -27,7 +27,6 @@ export default function CatalogManager() {
     { key: 'holidays', label: 'Días Inhábiles' },
     { key: 'etvs', label: 'ETVs' },
     { key: 'empresas', label: 'Empresas' },
-    { key: 'branches', label: 'Ubic. de Bóveda' },
     { key: 'sucursales', label: 'Sucursales' },
   ];
 
@@ -58,7 +57,6 @@ export default function CatalogManager() {
       {activeTab === 'holidays' && <HolidaysCatalog />}
       {activeTab === 'etvs' && <EtvsCatalog />}
       {activeTab === 'empresas' && <EmpresasCatalog />}
-      {activeTab === 'branches' && <BranchesCatalog />}
       {activeTab === 'sucursales' && <SucursalesCatalog />}
     </div>
   );
@@ -106,6 +104,11 @@ function VaultsCatalog() {
   const [reactivateTarget, setReactivateTarget] = useState<Vault | null>(null);
   const [reactivateBalance, setReactivateBalance] = useState('0.00');
   const [reactivateError, setReactivateError] = useState('');
+
+  // Creación inline de ubicación
+  const [inlineBranchCtx, setInlineBranchCtx] = useState<'create' | 'edit' | null>(null);
+  const [inlineBranchName, setInlineBranchName] = useState('');
+  const [inlineBranchError, setInlineBranchError] = useState('');
 
   const createForm = useForm<VaultCreateForm>({
     resolver: zodResolver(vaultCreateSchema),
@@ -206,6 +209,20 @@ function VaultsCatalog() {
       createForm.reset({ initial_balance: '0.00' });
       await load();
     } catch (err) { setCreateError(getErrorMessage(err)); }
+  };
+
+  const handleInlineBranch = async () => {
+    if (!inlineBranchName.trim()) return;
+    setInlineBranchError('');
+    try {
+      const branch = await vaultService.createBranch(inlineBranchName.trim());
+      const updated = await vaultService.listBranches();
+      setBranches(updated);
+      if (inlineBranchCtx === 'create') createForm.setValue('branch_id', branch.id);
+      else if (inlineBranchCtx === 'edit') editForm.setValue('branch_id', branch.id);
+      setInlineBranchCtx(null);
+      setInlineBranchName('');
+    } catch (err) { setInlineBranchError(getErrorMessage(err)); }
   };
 
   const getUserName = (id: number | null) => {
@@ -358,12 +375,34 @@ function VaultsCatalog() {
                   )}
                 </div>
                 <div>
-                  <label className="label">Sucursal (ubic. bóveda)</label>
-                  <select className={createForm.formState.errors.branch_id ? 'input-error' : 'input'}
-                    {...createForm.register('branch_id', { valueAsNumber: true })}>
-                    <option value="">Seleccionar...</option>
-                    {branches.filter(b => b.is_active).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                  </select>
+                  <label className="label">Ubicación de bóveda</label>
+                  <div className="flex gap-2">
+                    <select className={`flex-1 ${createForm.formState.errors.branch_id ? 'input-error' : 'input'}`}
+                      {...createForm.register('branch_id', { valueAsNumber: true })}>
+                      <option value="">Seleccionar...</option>
+                      {branches.filter(b => b.is_active).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    </select>
+                    <button type="button"
+                      onClick={() => { setInlineBranchCtx('create'); setInlineBranchName(''); setInlineBranchError(''); }}
+                      className="btn-secondary text-xs whitespace-nowrap px-2">+ Nueva</button>
+                  </div>
+                  {inlineBranchCtx === 'create' && (
+                    <div className="flex gap-2 mt-2">
+                      <input
+                        autoFocus
+                        className="input flex-1 text-sm"
+                        placeholder="Nombre de la ubicación"
+                        value={inlineBranchName}
+                        onChange={e => setInlineBranchName(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleInlineBranch())}
+                      />
+                      <button type="button" onClick={handleInlineBranch} className="btn-primary text-xs">Crear</button>
+                      <button type="button" onClick={() => setInlineBranchCtx(null)} className="btn-ghost text-xs">×</button>
+                    </div>
+                  )}
+                  {inlineBranchCtx === 'create' && inlineBranchError && (
+                    <p className="text-status-error text-xs mt-1">{inlineBranchError}</p>
+                  )}
                   {createForm.formState.errors.branch_id && (
                     <p className="text-status-error text-xs mt-1">{createForm.formState.errors.branch_id.message}</p>
                   )}
@@ -417,12 +456,34 @@ function VaultsCatalog() {
                   )}
                 </div>
                 <div className="col-span-2">
-                  <label className="label">Sucursal (ubic. bóveda)</label>
-                  <select className={editForm.formState.errors.branch_id ? 'input-error' : 'input'}
-                    {...editForm.register('branch_id', { valueAsNumber: true })}>
-                    <option value="">Seleccionar...</option>
-                    {branches.filter(b => b.is_active).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                  </select>
+                  <label className="label">Ubicación de bóveda</label>
+                  <div className="flex gap-2">
+                    <select className={`flex-1 ${editForm.formState.errors.branch_id ? 'input-error' : 'input'}`}
+                      {...editForm.register('branch_id', { valueAsNumber: true })}>
+                      <option value="">Seleccionar...</option>
+                      {branches.filter(b => b.is_active).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    </select>
+                    <button type="button"
+                      onClick={() => { setInlineBranchCtx('edit'); setInlineBranchName(''); setInlineBranchError(''); }}
+                      className="btn-secondary text-xs whitespace-nowrap px-2">+ Nueva</button>
+                  </div>
+                  {inlineBranchCtx === 'edit' && (
+                    <div className="flex gap-2 mt-2">
+                      <input
+                        autoFocus
+                        className="input flex-1 text-sm"
+                        placeholder="Nombre de la ubicación"
+                        value={inlineBranchName}
+                        onChange={e => setInlineBranchName(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleInlineBranch())}
+                      />
+                      <button type="button" onClick={handleInlineBranch} className="btn-primary text-xs">Crear</button>
+                      <button type="button" onClick={() => setInlineBranchCtx(null)} className="btn-ghost text-xs">×</button>
+                    </div>
+                  )}
+                  {inlineBranchCtx === 'edit' && inlineBranchError && (
+                    <p className="text-status-error text-xs mt-1">{inlineBranchError}</p>
+                  )}
                 </div>
                 <div>
                   <label className="label">Gerente</label>
@@ -926,100 +987,6 @@ function EmpresasCatalog() {
             placeholder="Nombre de la empresa *"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          />
-        </InlineForm>
-      )}
-    </CatalogTable>
-  );
-}
-
-// ─── Sucursales ───────────────────────────────────────────────────────────────
-
-function BranchesCatalog() {
-  const [items, setItems] = useState<Branch[]>([]);
-  const [showForm, setShowForm] = useState(false);
-  const [editId, setEditId] = useState<number | null>(null);
-  const [name, setName] = useState('');
-  const [error, setError] = useState('');
-  const [includeInactive, setIncludeInactive] = useState(false);
-
-  useEffect(() => { load(); }, [includeInactive]);
-
-  const load = async () => {
-    const data = await vaultService.listBranches({ include_inactive: includeInactive });
-    setItems(data);
-  };
-
-  const handleSubmit = async () => {
-    setError('');
-    try {
-      if (editId) {
-        await vaultService.updateBranch(editId, { name });
-      } else {
-        await vaultService.createBranch(name);
-      }
-      setShowForm(false);
-      setEditId(null);
-      setName('');
-      await load();
-    } catch (err) {
-      setError(getErrorMessage(err));
-    }
-  };
-
-  const handleToggle = async (item: Branch) => {
-    try {
-      await vaultService.updateBranch(item.id, { is_active: !item.is_active });
-      await load();
-    } catch (err) {
-      alert(getErrorMessage(err));
-    }
-  };
-
-  return (
-    <CatalogTable
-      title="Sucursales"
-      items={items}
-      columns={['Nombre', 'Estado', 'Acciones']}
-      renderRow={(item: Branch) => (
-        <>
-          <td className="px-4 py-3 font-medium">{item.name}</td>
-          <td className="px-4 py-3">
-            <StatusBadge active={item.is_active} />
-          </td>
-          <td className="px-4 py-3">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  setEditId(item.id);
-                  setName(item.name);
-                  setShowForm(true);
-                }}
-                className="btn-ghost text-xs px-2 py-1"
-              >
-                <Pencil className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() => handleToggle(item)}
-                className={`text-xs px-2 py-1 rounded ${item.is_active ? 'text-status-error hover:bg-status-error-light' : 'text-status-success hover:bg-status-success-light'}`}
-              >
-                {item.is_active ? 'Desactivar' : 'Activar'}
-              </button>
-            </div>
-          </td>
-        </>
-      )}
-      onAdd={() => { setEditId(null); setName(''); setShowForm(true); }}
-      includeInactive={includeInactive}
-      onToggleInactive={() => setIncludeInactive(!includeInactive)}
-    >
-      {showForm && (
-        <InlineForm error={error} onCancel={() => setShowForm(false)} onSubmit={handleSubmit} isEdit={!!editId}>
-          <input
-            className="input"
-            placeholder="Nombre de la sucursal *"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
           />
         </InlineForm>
       )}
