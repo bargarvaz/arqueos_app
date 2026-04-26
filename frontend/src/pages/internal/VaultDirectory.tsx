@@ -1,6 +1,6 @@
-// Directorio de bóvedas — consulta (activas/inactivas) con edición y gestión de estado
+// Directorio de bóvedas — CRUD completo para admin
 import { useState, useEffect, useCallback } from 'react';
-import { Power, PowerOff, Edit2 } from 'lucide-react';
+import { Plus, Power, PowerOff, Edit2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -8,18 +8,29 @@ import type { ColumnDef } from '@tanstack/react-table';
 
 import DataTable from '@/components/tables/DataTable';
 import vaultService, { type Vault, type Branch } from '@/services/vaultService';
-import userService, { type UserResponse } from '@/services/userService';
+import userService, { type Company, type UserResponse } from '@/services/userService';
 import { formatCurrency } from '@/utils/formatters';
 import { getErrorMessage } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
 
+const createSchema = z.object({
+  vault_code: z.string().min(1, 'Código requerido.').max(20),
+  vault_name: z.string().min(2, 'Nombre requerido.').max(150),
+  company_id: z.number({ invalid_type_error: 'Selecciona empresa.' }).min(1),
+  branch_id: z.number({ invalid_type_error: 'Selecciona ubicación.' }).min(1),
+  manager_id: z.number().nullable().optional(),
+  treasurer_id: z.number().nullable().optional(),
+  initial_balance: z.string().regex(/^\d+(\.\d{1,2})?$/, 'Saldo inválido.'),
+});
+
 const editSchema = z.object({
   vault_name: z.string().min(2, 'Nombre requerido.').max(150),
-  branch_id: z.number({ invalid_type_error: 'Selecciona sucursal.' }).min(1),
+  branch_id: z.number({ invalid_type_error: 'Selecciona ubicación.' }).min(1),
   manager_id: z.number().nullable().optional(),
   treasurer_id: z.number().nullable().optional(),
 });
 
+type CreateForm = z.infer<typeof createSchema>;
 type EditForm = z.infer<typeof editSchema>;
 
 export default function VaultDirectory() {
@@ -34,23 +45,34 @@ export default function VaultDirectory() {
   const [includeInactive, setIncludeInactive] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [etvUsers, setEtvUsers] = useState<UserResponse[]>([]);
 
+  const [showCreate, setShowCreate] = useState(false);
+  const [createError, setCreateError] = useState('');
   const [editTarget, setEditTarget] = useState<Vault | null>(null);
   const [editError, setEditError] = useState('');
   const [reactivateTarget, setReactivateTarget] = useState<Vault | null>(null);
   const [reactivateBalance, setReactivateBalance] = useState('0.00');
   const [reactivateError, setReactivateError] = useState('');
 
+  // Creación inline de ubicación
+  const [inlineBranchCtx, setInlineBranchCtx] = useState<'create' | 'edit' | null>(null);
+  const [inlineBranchName, setInlineBranchName] = useState('');
+  const [inlineBranchError, setInlineBranchError] = useState('');
+
+  const createForm = useForm<CreateForm>({
+    resolver: zodResolver(createSchema),
+    defaultValues: { initial_balance: '0.00' },
+  });
   const editForm = useForm<EditForm>({ resolver: zodResolver(editSchema) });
 
   const load = useCallback(async () => {
     setIsLoading(true);
     try {
       const data = await vaultService.listVaults({
-        page,
-        page_size: pageSize,
+        page, page_size: pageSize,
         search: search || undefined,
         include_inactive: includeInactive,
       });
@@ -66,22 +88,34 @@ export default function VaultDirectory() {
   useEffect(() => {
     if (!isAdmin) return;
     Promise.all([
+      userService.listCompanies(),
       vaultService.listBranches(),
       userService.listUsers({ page: 1, page_size: 0, role: 'etv', is_active: true }),
-    ]).then(([b, u]) => {
+    ]).then(([c, b, u]) => {
+      setCompanies(c);
       setBranches(b);
       setEtvUsers(u.items);
     }).catch(() => {});
   }, [isAdmin]);
 
+  const handleInlineBranch = async (ctx: 'create' | 'edit') => {
+    if (!inlineBranchName.trim()) return;
+    setInlineBranchError('');
+    try {
+      const branch = await vaultService.createBranch(inlineBranchName.trim());
+      const updated = await vaultService.listBranches();
+      setBranches(updated);
+      if (ctx === 'create') createForm.setValue('branch_id', branch.id);
+      else editForm.setValue('branch_id', branch.id);
+      setInlineBranchCtx(null);
+      setInlineBranchName('');
+    } catch (err) { setInlineBranchError(getErrorMessage(err)); }
+  };
+
   const handleDeactivate = async (vault: Vault) => {
     if (!confirm(`¿Desactivar la bóveda ${vault.vault_code} — ${vault.vault_name}?`)) return;
-    try {
-      await vaultService.deactivateVault(vault.id);
-      await load();
-    } catch (err) {
-      alert(getErrorMessage(err));
-    }
+    try { await vaultService.deactivateVault(vault.id); await load(); }
+    catch (err) { alert(getErrorMessage(err)); }
   };
 
   const openReactivate = (vault: Vault) => {
@@ -97,14 +131,13 @@ export default function VaultDirectory() {
       await vaultService.reactivateVault(reactivateTarget.id, reactivateBalance);
       setReactivateTarget(null);
       await load();
-    } catch (err) {
-      setReactivateError(getErrorMessage(err));
-    }
+    } catch (err) { setReactivateError(getErrorMessage(err)); }
   };
 
   const openEdit = (vault: Vault) => {
     setEditTarget(vault);
     setEditError('');
+    setInlineBranchCtx(null);
     editForm.reset({
       vault_name: vault.vault_name,
       branch_id: vault.branch_id,
@@ -125,15 +158,78 @@ export default function VaultDirectory() {
       });
       setEditTarget(null);
       await load();
-    } catch (err) {
-      setEditError(getErrorMessage(err));
-    }
+    } catch (err) { setEditError(getErrorMessage(err)); }
+  };
+
+  const onCreateSubmit = async (data: CreateForm) => {
+    setCreateError('');
+    try {
+      await vaultService.createVault({
+        vault_code: data.vault_code.toUpperCase(),
+        vault_name: data.vault_name,
+        company_id: data.company_id,
+        branch_id: data.branch_id,
+        manager_id: data.manager_id ?? null,
+        treasurer_id: data.treasurer_id ?? null,
+        initial_balance: data.initial_balance,
+      });
+      setShowCreate(false);
+      createForm.reset({ initial_balance: '0.00' });
+      await load();
+    } catch (err) { setCreateError(getErrorMessage(err)); }
   };
 
   const getUserName = (id: number | null) => {
     if (!id) return '—';
     const u = etvUsers.find(u => u.id === id);
     return u ? u.full_name : `#${id}`;
+  };
+
+  const renderBranchField = (ctx: 'create' | 'edit') => {
+    const reg = ctx === 'create'
+      ? createForm.register('branch_id', { valueAsNumber: true })
+      : editForm.register('branch_id', { valueAsNumber: true });
+    const err = ctx === 'create'
+      ? createForm.formState.errors.branch_id
+      : editForm.formState.errors.branch_id;
+    return (
+      <div>
+        <label className="label">Ubicación de bóveda</label>
+        <div className="flex gap-2">
+          <select className={`flex-1 ${err ? 'input-error' : 'input'}`} {...reg}>
+            <option value="">Seleccionar...</option>
+            {branches.filter(b => b.is_active).map(b => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => { setInlineBranchCtx(ctx); setInlineBranchName(''); setInlineBranchError(''); }}
+            className="btn-secondary text-xs whitespace-nowrap px-2"
+          >
+            + Nueva
+          </button>
+        </div>
+        {inlineBranchCtx === ctx && (
+          <div className="flex gap-2 mt-2">
+            <input
+              autoFocus
+              className="input flex-1 text-sm"
+              placeholder="Nombre de la ubicación"
+              value={inlineBranchName}
+              onChange={e => setInlineBranchName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleInlineBranch(ctx); } }}
+            />
+            <button type="button" onClick={() => handleInlineBranch(ctx)} className="btn-primary text-xs">Crear</button>
+            <button type="button" onClick={() => setInlineBranchCtx(null)} className="btn-ghost text-xs">×</button>
+          </div>
+        )}
+        {inlineBranchCtx === ctx && inlineBranchError && (
+          <p className="text-status-error text-xs mt-1">{inlineBranchError}</p>
+        )}
+        {err && <p className="text-status-error text-xs mt-1">{err.message}</p>}
+      </div>
+    );
   };
 
   const columns: ColumnDef<Vault>[] = [
@@ -176,45 +272,40 @@ export default function VaultDirectory() {
       ),
     },
     ...(isAdmin
-      ? [
-          {
-            id: 'actions',
-            header: 'Acciones',
-            cell: ({ row }: { row: { original: Vault } }) => {
-              const vault = row.original;
-              return (
-                <div className="flex items-center gap-2">
-                  {vault.is_active && (
-                    <button
-                      onClick={() => openEdit(vault)}
-                      className="flex items-center gap-1 text-xs text-primary hover:bg-primary/10 px-2 py-1 rounded"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                      Editar
-                    </button>
-                  )}
-                  {vault.is_active ? (
-                    <button
-                      onClick={() => handleDeactivate(vault)}
-                      className="flex items-center gap-1 text-xs text-status-error hover:bg-status-error-light px-2 py-1 rounded"
-                    >
-                      <PowerOff className="w-3.5 h-3.5" />
-                      Desactivar
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => openReactivate(vault)}
-                      className="flex items-center gap-1 text-xs text-status-success hover:bg-status-success-light px-2 py-1 rounded"
-                    >
-                      <Power className="w-3.5 h-3.5" />
-                      Reactivar
-                    </button>
-                  )}
-                </div>
-              );
-            },
-          } as ColumnDef<Vault>,
-        ]
+      ? [{
+          id: 'actions',
+          header: 'Acciones',
+          cell: ({ row }: { row: { original: Vault } }) => {
+            const vault = row.original;
+            return (
+              <div className="flex items-center gap-2">
+                {vault.is_active && (
+                  <button
+                    onClick={() => openEdit(vault)}
+                    className="flex items-center gap-1 text-xs text-primary hover:bg-primary/10 px-2 py-1 rounded"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" /> Editar
+                  </button>
+                )}
+                {vault.is_active ? (
+                  <button
+                    onClick={() => handleDeactivate(vault)}
+                    className="flex items-center gap-1 text-xs text-status-error hover:bg-status-error-light px-2 py-1 rounded"
+                  >
+                    <PowerOff className="w-3.5 h-3.5" /> Desactivar
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => openReactivate(vault)}
+                    className="flex items-center gap-1 text-xs text-status-success hover:bg-status-success-light px-2 py-1 rounded"
+                  >
+                    <Power className="w-3.5 h-3.5" /> Reactivar
+                  </button>
+                )}
+              </div>
+            );
+          },
+        } as ColumnDef<Vault>]
       : []),
   ];
 
@@ -222,15 +313,25 @@ export default function VaultDirectory() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-semibold text-text-primary">Directorio de Bóvedas</h1>
-        <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
-          <input
-            type="checkbox"
-            checked={includeInactive}
-            onChange={(e) => setIncludeInactive(e.target.checked)}
-            className="rounded"
-          />
-          Mostrar inactivas
-        </label>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+            <input
+              type="checkbox"
+              checked={includeInactive}
+              onChange={(e) => setIncludeInactive(e.target.checked)}
+              className="rounded"
+            />
+            Mostrar inactivas
+          </label>
+          {isAdmin && (
+            <button
+              onClick={() => { setShowCreate(true); setCreateError(''); setInlineBranchCtx(null); createForm.reset({ initial_balance: '0.00' }); }}
+              className="btn-primary flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" /> Nueva bóveda
+            </button>
+          )}
+        </div>
       </div>
 
       <DataTable
@@ -245,6 +346,96 @@ export default function VaultDirectory() {
         searchPlaceholder="Buscar por código o nombre..."
         isLoading={isLoading}
       />
+
+      {/* ─── Modal Crear ─────────────────────────────────────────────── */}
+      {showCreate && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-lg shadow-xl">
+            <div className="flex items-center justify-between p-5 border-b border-border">
+              <h2 className="text-base font-semibold text-text-primary">Nueva Bóveda</h2>
+              <button onClick={() => setShowCreate(false)} className="text-text-muted hover:text-text-primary text-lg leading-none">×</button>
+            </div>
+            <form onSubmit={createForm.handleSubmit(onCreateSubmit)} className="p-5 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="label">Código</label>
+                  <input
+                    type="text" placeholder="Ej. 9001"
+                    className={createForm.formState.errors.vault_code ? 'input-error uppercase' : 'input uppercase'}
+                    {...createForm.register('vault_code')}
+                  />
+                  {createForm.formState.errors.vault_code && (
+                    <p className="text-status-error text-xs mt-1">{createForm.formState.errors.vault_code.message}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="label">Saldo inicial</label>
+                  <input
+                    type="text" placeholder="0.00"
+                    className={createForm.formState.errors.initial_balance ? 'input-error' : 'input'}
+                    {...createForm.register('initial_balance')}
+                  />
+                  {createForm.formState.errors.initial_balance && (
+                    <p className="text-status-error text-xs mt-1">{createForm.formState.errors.initial_balance.message}</p>
+                  )}
+                </div>
+                <div className="col-span-2">
+                  <label className="label">Nombre</label>
+                  <input
+                    type="text" placeholder="Nombre descriptivo de la bóveda"
+                    className={createForm.formState.errors.vault_name ? 'input-error' : 'input'}
+                    {...createForm.register('vault_name')}
+                  />
+                  {createForm.formState.errors.vault_name && (
+                    <p className="text-status-error text-xs mt-1">{createForm.formState.errors.vault_name.message}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="label">ETV</label>
+                  <select
+                    className={createForm.formState.errors.company_id ? 'input-error' : 'input'}
+                    {...createForm.register('company_id', { valueAsNumber: true })}
+                  >
+                    <option value="">Seleccionar...</option>
+                    {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  {createForm.formState.errors.company_id && (
+                    <p className="text-status-error text-xs mt-1">{createForm.formState.errors.company_id.message}</p>
+                  )}
+                </div>
+                <div>
+                  {renderBranchField('create')}
+                </div>
+                <div>
+                  <label className="label">Gerente (opcional)</label>
+                  <select className="input" {...createForm.register('manager_id', { valueAsNumber: true })}>
+                    <option value="">Ninguno</option>
+                    {etvUsers.map(u => (
+                      <option key={u.id} value={u.id}>{u.full_name}{u.puesto ? ` — ${u.puesto}` : ''}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Tesorero (opcional)</label>
+                  <select className="input" {...createForm.register('treasurer_id', { valueAsNumber: true })}>
+                    <option value="">Ninguno</option>
+                    {etvUsers.map(u => (
+                      <option key={u.id} value={u.id}>{u.full_name}{u.puesto ? ` — ${u.puesto}` : ''}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {createError && <p className="text-status-error text-sm">{createError}</p>}
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowCreate(false)} className="btn-secondary flex-1">Cancelar</button>
+                <button type="submit" disabled={createForm.formState.isSubmitting} className="btn-primary flex-1">
+                  {createForm.formState.isSubmitting ? 'Creando...' : 'Crear bóveda'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ─── Modal Editar ─────────────────────────────────────────────── */}
       {editTarget && (
@@ -270,14 +461,7 @@ export default function VaultDirectory() {
                   )}
                 </div>
                 <div className="col-span-2">
-                  <label className="label">Sucursal</label>
-                  <select
-                    className={editForm.formState.errors.branch_id ? 'input-error' : 'input'}
-                    {...editForm.register('branch_id', { valueAsNumber: true })}
-                  >
-                    <option value="">Seleccionar...</option>
-                    {branches.filter(b => b.is_active).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                  </select>
+                  {renderBranchField('edit')}
                 </div>
                 <div>
                   <label className="label">Gerente</label>
