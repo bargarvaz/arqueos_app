@@ -18,10 +18,10 @@ import catalogService, { MovementType, Sucursal } from '@/services/catalogServic
 const recordSchema = z
   .object({
     record_uid: z.string().optional(),
-    voucher: z.string().min(1, 'Obligatorio').max(100),
-    reference: z.string().min(1, 'Obligatorio').max(100),
-    sucursal_id: z.number({ invalid_type_error: 'Selecciona sucursal' }).min(1),
-    movement_type_id: z.number({ invalid_type_error: 'Selecciona tipo' }).min(1),
+    voucher: z.string().max(100).default(''),
+    reference: z.string().max(100).default(''),
+    sucursal_id: z.number().default(0),
+    movement_type_id: z.number().default(0),
     entries: z.string().default('0'),
     withdrawals: z.string().default('0'),
     bill_1000: z.string().default('0'),
@@ -40,10 +40,12 @@ const recordSchema = z
     coin_050: z.string().default('0'),
     coin_020: z.string().default('0'),
     coin_010: z.string().default('0'),
-    record_date: z.string().min(1, 'Obligatorio'),
+    record_date: z.string().default(''),
   })
   .refine(
     (r) => {
+      // Filas vacías no se validan — el backend las ignora
+      if (!r.voucher.trim() && !r.sucursal_id && !r.movement_type_id) return true;
       const e = parseFloat(r.entries) || 0;
       const w = parseFloat(r.withdrawals) || 0;
       return !(e > 0 && w > 0);
@@ -76,6 +78,17 @@ function emptyRecord(date: string): RecordValues {
     (base as unknown as Record<string, string>)[d.key] = '0';
   }
   return base;
+}
+
+function isRowEmpty(r: RecordValues): boolean {
+  return (
+    !r.voucher.trim() &&
+    !r.reference.trim() &&
+    !r.sucursal_id &&
+    !r.movement_type_id &&
+    (parseFloat(r.entries) || 0) === 0 &&
+    (parseFloat(r.withdrawals) || 0) === 0
+  );
 }
 
 function calcDenomSum(record: RecordValues): number {
@@ -171,11 +184,11 @@ export default function ArqueoForm() {
                 })) as unknown as RecordValues[];
                 reset({ records: mapped });
               } else {
-                reset({ records: [emptyRecord(state.arqueo_date)] });
+                reset({ records: Array.from({ length: 5 }, () => emptyRecord(state.arqueo_date)) });
               }
             });
           } else {
-            reset({ records: [emptyRecord(state.arqueo_date)] });
+            reset({ records: Array.from({ length: 5 }, () => emptyRecord(state.arqueo_date)) });
           }
         }
       })
@@ -188,12 +201,22 @@ export default function ArqueoForm() {
 
   const onSubmit = async (values: FormValues) => {
     if (!header || !state) return;
+
+    const nonEmpty = values.records.filter((r) => !isRowEmpty(r));
+    if (nonEmpty.length === 0) {
+      setServerError('Debes capturar al menos un registro antes de publicar.');
+      return;
+    }
+
     setPublishing(true);
     setServerError('');
 
     try {
       await arqueoService.publishArqueo(state.vault.id, state.arqueo_date, {
-        records: values.records as RecordCreatePayload[],
+        records: nonEmpty.map((r) => ({
+          ...r,
+          record_date: state.arqueo_date,
+        })) as RecordCreatePayload[],
         updated_at: header.updated_at,
       });
       clearDraft();
@@ -331,7 +354,6 @@ export default function ArqueoForm() {
             <thead>
               <tr className="text-left text-text-muted border-b border-border">
                 <th className="px-2 py-2 w-6">#</th>
-                <th className="px-2 py-2">Fecha</th>
                 <th className="px-2 py-2">Comprobante</th>
                 <th className="px-2 py-2">Referencia</th>
                 <th className="px-2 py-2">Nombre Sucursal</th>
@@ -355,16 +377,6 @@ export default function ArqueoForm() {
                       } ${denomError ? 'ring-1 ring-inset ring-error/50' : ''}`}
                     >
                       <td className="px-2 py-1.5 text-text-muted">{idx + 1}</td>
-
-                      {/* Fecha */}
-                      <td className="px-2 py-1.5">
-                        <input
-                          type="date"
-                          {...register(`records.${idx}.record_date`)}
-                          disabled={readOnly}
-                          className="input w-32"
-                        />
-                      </td>
 
                       {/* Comprobante */}
                       <td className="px-2 py-1.5">
@@ -507,7 +519,7 @@ export default function ArqueoForm() {
                     {/* Denominaciones expandibles */}
                     {isExpanded && (
                       <tr className="bg-surface/60">
-                        <td colSpan={readOnly ? 9 : 10} className="px-4 py-3">
+                        <td colSpan={readOnly ? 8 : 9} className="px-4 py-3">
                           <div className="flex flex-wrap gap-x-6 gap-y-2">
                             <div className="w-full text-xs font-medium text-text-muted mb-1">
                               Billetes
