@@ -248,7 +248,7 @@ export default function ArqueoForm() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="w-full">
       {/* Encabezado */}
       <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
@@ -331,16 +331,16 @@ export default function ArqueoForm() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-text-muted border-b border-border">
-                <th className="px-3 py-2 w-6">#</th>
-                <th className="px-3 py-2">Fecha</th>
-                <th className="px-3 py-2">Comprobante</th>
-                <th className="px-3 py-2">Referencia</th>
-                <th className="px-3 py-2">Sucursal</th>
-                <th className="px-3 py-2">Tipo Movimiento</th>
-                <th className="px-3 py-2">Entradas</th>
-                <th className="px-3 py-2">Salidas</th>
-                <th className="px-3 py-2 w-20">Denom.</th>
-                {!readOnly && <th className="px-3 py-2 w-8" />}
+                <th className="px-2 py-2 w-6">#</th>
+                <th className="px-2 py-2">Fecha</th>
+                <th className="px-2 py-2">Comprobante</th>
+                <th className="px-2 py-2">Referencia</th>
+                <th className="px-2 py-2">Nombre Sucursal</th>
+                <th className="px-2 py-2">Tipo Movimiento</th>
+                <th className="px-2 py-2">Entradas</th>
+                <th className="px-2 py-2">Salidas</th>
+                <th className="px-2 py-2 w-16">Denom.</th>
+                {!readOnly && <th className="px-2 py-2 w-8" />}
               </tr>
             </thead>
             <tbody>
@@ -355,46 +355,46 @@ export default function ArqueoForm() {
                         idx % 2 === 0 ? 'bg-white' : 'bg-surface/40'
                       } ${denomError ? 'ring-1 ring-inset ring-error/50' : ''}`}
                     >
-                      <td className="px-3 py-1.5 text-text-muted">{idx + 1}</td>
+                      <td className="px-2 py-1.5 text-text-muted">{idx + 1}</td>
 
                       {/* Fecha */}
-                      <td className="px-3 py-1.5">
+                      <td className="px-2 py-1.5">
                         <input
                           type="date"
                           {...register(`records.${idx}.record_date`)}
                           disabled={readOnly}
-                          className="input w-36"
+                          className="input w-32"
                         />
                       </td>
 
                       {/* Comprobante */}
-                      <td className="px-3 py-1.5">
+                      <td className="px-2 py-1.5">
                         <input
                           type="text"
                           {...register(`records.${idx}.voucher`)}
                           placeholder="Comprobante"
                           disabled={readOnly}
-                          className={`input w-28 ${
+                          className={`input w-24 ${
                             errors.records?.[idx]?.voucher ? 'input-error' : ''
                           }`}
                         />
                       </td>
 
                       {/* Referencia */}
-                      <td className="px-3 py-1.5">
+                      <td className="px-2 py-1.5">
                         <input
                           type="text"
                           {...register(`records.${idx}.reference`)}
                           placeholder="Referencia"
                           disabled={readOnly}
-                          className={`input w-28 ${
+                          className={`input w-24 ${
                             errors.records?.[idx]?.reference ? 'input-error' : ''
                           }`}
                         />
                       </td>
 
-                      {/* Sucursal */}
-                      <td className="px-3 py-1.5">
+                      {/* Nombre Sucursal */}
+                      <td className="px-2 py-1.5">
                         <Controller
                           control={control}
                           name={`records.${idx}.branch_id`}
@@ -403,7 +403,7 @@ export default function ArqueoForm() {
                               {...f}
                               onChange={(e) => f.onChange(parseInt(e.target.value))}
                               disabled={readOnly}
-                              className={`input w-32 ${
+                              className={`input w-28 ${
                                 errors.records?.[idx]?.branch_id ? 'input-error' : ''
                               }`}
                             >
@@ -419,7 +419,7 @@ export default function ArqueoForm() {
                       </td>
 
                       {/* Tipo de movimiento */}
-                      <td className="px-3 py-1.5">
+                      <td className="px-2 py-1.5">
                         <Controller
                           control={control}
                           name={`records.${idx}.movement_type_id`}
@@ -428,7 +428,7 @@ export default function ArqueoForm() {
                               {...f}
                               onChange={(e) => f.onChange(parseInt(e.target.value))}
                               disabled={readOnly}
-                              className={`input w-40 ${
+                              className={`input w-36 ${
                                 errors.records?.[idx]?.movement_type_id ? 'input-error' : ''
                               }`}
                             >
@@ -444,7 +444,7 @@ export default function ArqueoForm() {
                       </td>
 
                       {/* Entradas */}
-                      <td className="px-3 py-1.5">
+                      <td className="px-2 py-1.5">
                         <input
                           type="number"
                           step="0.01"
@@ -452,14 +452,14 @@ export default function ArqueoForm() {
                           {...register(`records.${idx}.entries`)}
                           disabled={readOnly}
                           placeholder="0.00"
-                          className={`input w-28 text-right ${
+                          className={`input w-24 text-right ${
                             errors.records?.[idx]?.entries ? 'input-error' : ''
                           }`}
                         />
                       </td>
 
                       {/* Salidas */}
-                      <td className="px-3 py-1.5">
+                      <td className="px-2 py-1.5">
                         <input
                           type="number"
                           step="0.01"
@@ -467,12 +467,12 @@ export default function ArqueoForm() {
                           {...register(`records.${idx}.withdrawals`)}
                           disabled={readOnly}
                           placeholder="0.00"
-                          className="input w-28 text-right"
+                          className="input w-24 text-right"
                         />
                       </td>
 
                       {/* Toggle denominaciones */}
-                      <td className="px-3 py-1.5 text-center">
+                      <td className="px-2 py-1.5 text-center">
                         <button
                           type="button"
                           onClick={() => setExpandedRow(isExpanded ? null : idx)}
@@ -490,7 +490,7 @@ export default function ArqueoForm() {
                       </td>
 
                       {!readOnly && (
-                        <td className="px-3 py-1.5">
+                        <td className="px-2 py-1.5">
                           {fields.length > 1 && (
                             <button
                               type="button"
