@@ -6,11 +6,11 @@ from typing import TypeVar, Type
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 
-from app.catalogs.models import MovementType, ModificationReason, Holiday
+from app.catalogs.models import MovementType, ModificationReason, Holiday, Sucursal
 from app.common.exceptions import NotFoundError, ConflictError
 from app.common.pagination import PaginationParams
 
-CatalogModel = TypeVar("CatalogModel", MovementType, ModificationReason, Holiday)
+CatalogModel = TypeVar("CatalogModel", MovementType, ModificationReason, Holiday, Sucursal)
 
 
 async def list_catalog(
@@ -106,6 +106,27 @@ async def create_holiday(
 
 async def update_holiday(db: AsyncSession, item_id: int, **kwargs) -> Holiday:
     item = await get_catalog_item(db, Holiday, item_id)
+    for key, value in kwargs.items():
+        if value is not None:
+            setattr(item, key, value)
+    await db.commit()
+    await db.refresh(item)
+    return item
+
+
+async def create_sucursal(db: AsyncSession, name: str) -> Sucursal:
+    result = await db.execute(select(Sucursal).where(Sucursal.name == name))
+    if result.scalar_one_or_none():
+        raise ConflictError(f"Ya existe una sucursal llamada '{name}'.")
+    item = Sucursal(name=name)
+    db.add(item)
+    await db.commit()
+    await db.refresh(item)
+    return item
+
+
+async def update_sucursal(db: AsyncSession, item_id: int, **kwargs) -> Sucursal:
+    item = await get_catalog_item(db, Sucursal, item_id)
     for key, value in kwargs.items():
         if value is not None:
             setattr(item, key, value)

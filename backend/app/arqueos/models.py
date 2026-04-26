@@ -107,8 +107,8 @@ class ArqueoRecord(Base):
     )
     voucher: Mapped[str] = mapped_column(String(100), nullable=False)
     reference: Mapped[str] = mapped_column(String(100), nullable=False)
-    branch_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("branches.id"), nullable=False
+    sucursal_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("sucursales.id"), nullable=True
     )
     entries: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
     withdrawals: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)

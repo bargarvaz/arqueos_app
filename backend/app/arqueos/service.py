@@ -505,7 +505,7 @@ def _record_snapshot(record: ArqueoRecord) -> dict:
         "record_uid": record.record_uid,
         "voucher": record.voucher,
         "reference": record.reference,
-        "branch_id": record.branch_id,
+        "sucursal_id": record.sucursal_id,
         "entries": str(record.entries),
         "withdrawals": str(record.withdrawals),
         "movement_type_id": record.movement_type_id,
@@ -515,7 +515,7 @@ def _record_snapshot(record: ArqueoRecord) -> dict:
 def _apply_record_data(record: ArqueoRecord, data: dict[str, Any]) -> None:
     """Aplica los datos del request al modelo de registro."""
     fields = [
-        "voucher", "reference", "branch_id", "movement_type_id",
+        "voucher", "reference", "sucursal_id", "movement_type_id",
         "entries", "withdrawals", "record_date",
     ] + list(DENOMINATION_MULTIPLIERS.keys())
 

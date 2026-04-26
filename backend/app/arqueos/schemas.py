@@ -12,7 +12,7 @@ class ArqueoRecordCreate(BaseModel):
 
     voucher: str = Field(min_length=1, max_length=100)
     reference: str = Field(min_length=1, max_length=100)
-    branch_id: int
+    sucursal_id: int | None = None
     movement_type_id: int
     entries: Decimal = Field(default=Decimal("0"), ge=0)
     withdrawals: Decimal = Field(default=Decimal("0"), ge=0)
@@ -51,7 +51,7 @@ class ArqueoRecordResponse(BaseModel):
     arqueo_header_id: int
     voucher: str
     reference: str
-    branch_id: int
+    sucursal_id: int | None = None
     entries: Decimal
     withdrawals: Decimal
     bill_1000: Decimal

@@ -23,7 +23,7 @@ def _base_record(**overrides) -> dict:
     record = {
         "voucher": "VCH-001",
         "reference": "REF-001",
-        "branch_id": 1,
+        "sucursal_id": 1,
         "movement_type_id": 1,
         "entries": Decimal("1000.00"),
         "withdrawals": Decimal("0"),
@@ -53,7 +53,7 @@ def _base_record(**overrides) -> dict:
 class TestIsRowEmpty:
     def test_all_defaults_is_empty(self):
         record = {
-            "voucher": "", "reference": "", "branch_id": None,
+            "voucher": "", "reference": "", "sucursal_id": None,
             "movement_type_id": None, "entries": 0, "withdrawals": 0,
         }
         for k in DENOMINATION_MULTIPLIERS:
@@ -61,19 +61,19 @@ class TestIsRowEmpty:
         assert is_row_empty(record) is True
 
     def test_with_voucher_not_empty(self):
-        record = {"voucher": "X", "reference": "", "branch_id": None, "movement_type_id": None, "entries": 0, "withdrawals": 0}
+        record = {"voucher": "X", "reference": "", "sucursal_id": None, "movement_type_id": None, "entries": 0, "withdrawals": 0}
         for k in DENOMINATION_MULTIPLIERS:
             record[k] = 0
         assert is_row_empty(record) is False
 
     def test_with_entries_not_empty(self):
-        record = {"voucher": "", "reference": "", "branch_id": None, "movement_type_id": None, "entries": "100", "withdrawals": 0}
+        record = {"voucher": "", "reference": "", "sucursal_id": None, "movement_type_id": None, "entries": "100", "withdrawals": 0}
         for k in DENOMINATION_MULTIPLIERS:
             record[k] = 0
         assert is_row_empty(record) is False
 
     def test_with_branch_not_empty(self):
-        record = {"voucher": "", "reference": "", "branch_id": 1, "movement_type_id": None, "entries": 0, "withdrawals": 0}
+        record = {"voucher": "", "reference": "", "sucursal_id": 1, "movement_type_id": None, "entries": 0, "withdrawals": 0}
         for k in DENOMINATION_MULTIPLIERS:
             record[k] = 0
         assert is_row_empty(record) is False
@@ -95,7 +95,7 @@ class TestRequiredFields:
         assert any("referencia" in e for e in errors)
 
     def test_missing_branch(self):
-        errors = validate_required_fields(_base_record(branch_id=0))
+        errors = validate_required_fields(_base_record(sucursal_id=0))
         assert any("sucursal" in e for e in errors)
 
     def test_missing_movement_type(self):
@@ -193,7 +193,7 @@ class TestValidateRecord:
         validate_record(_base_record())  # No debe lanzar
 
     def test_empty_record_raises(self):
-        empty = {"voucher": "", "reference": "", "branch_id": None, "movement_type_id": None, "entries": 0, "withdrawals": 0}
+        empty = {"voucher": "", "reference": "", "sucursal_id": None, "movement_type_id": None, "entries": 0, "withdrawals": 0}
         for k in DENOMINATION_MULTIPLIERS:
             empty[k] = 0
         with pytest.raises(ValidationAppError):

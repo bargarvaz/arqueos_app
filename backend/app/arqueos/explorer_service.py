@@ -11,9 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func
 
 from app.arqueos.models import ArqueoHeader, ArqueoRecord, ArqueoStatus
-from app.vaults.models import Vault, Branch
+from app.vaults.models import Vault
 from app.users.models import Company
-from app.catalogs.models import MovementType
+from app.catalogs.models import MovementType, Sucursal
 from app.audit.service import log_action
 
 
@@ -43,13 +43,13 @@ async def explore_records(
             Vault.vault_code,
             Vault.vault_name,
             Company.name.label("company_name"),
-            Branch.name.label("branch_name"),
+            Sucursal.name.label("branch_name"),
             MovementType.name.label("movement_type_name"),
         )
         .join(ArqueoHeader, ArqueoHeader.id == ArqueoRecord.arqueo_header_id)
         .join(Vault, Vault.id == ArqueoHeader.vault_id)
         .join(Company, Company.id == Vault.company_id)
-        .outerjoin(Branch, Branch.id == ArqueoRecord.branch_id)
+        .outerjoin(Sucursal, Sucursal.id == ArqueoRecord.sucursal_id)
         .outerjoin(MovementType, MovementType.id == ArqueoRecord.movement_type_id)
         .where(ArqueoRecord.is_active == True)
     )

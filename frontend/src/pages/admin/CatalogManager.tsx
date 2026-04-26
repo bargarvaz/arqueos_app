@@ -5,12 +5,13 @@ import catalogService, {
   type MovementType,
   type ModificationReason,
   type Holiday,
+  type Sucursal,
 } from '@/services/catalogService';
 import userService, { type Company, type Empresa } from '@/services/userService';
 import vaultService, { type Branch } from '@/services/vaultService';
 import { getErrorMessage } from '@/services/api';
 
-type CatalogTab = 'movement_types' | 'modification_reasons' | 'holidays' | 'etvs' | 'empresas' | 'branches';
+type CatalogTab = 'movement_types' | 'modification_reasons' | 'holidays' | 'etvs' | 'empresas' | 'branches' | 'sucursales';
 
 export default function CatalogManager() {
   const [activeTab, setActiveTab] = useState<CatalogTab>('movement_types');
@@ -21,7 +22,8 @@ export default function CatalogManager() {
     { key: 'holidays', label: 'Días Inhábiles' },
     { key: 'etvs', label: 'ETVs' },
     { key: 'empresas', label: 'Empresas' },
-    { key: 'branches', label: 'Sucursales' },
+    { key: 'branches', label: 'Ubic. de Bóveda' },
+    { key: 'sucursales', label: 'Sucursales' },
   ];
 
   return (
@@ -51,6 +53,7 @@ export default function CatalogManager() {
       {activeTab === 'etvs' && <EtvsCatalog />}
       {activeTab === 'empresas' && <EmpresasCatalog />}
       {activeTab === 'branches' && <BranchesCatalog />}
+      {activeTab === 'sucursales' && <SucursalesCatalog />}
     </div>
   );
 }
@@ -568,6 +571,94 @@ function BranchesCatalog() {
                   setName(item.name);
                   setShowForm(true);
                 }}
+                className="btn-ghost text-xs px-2 py-1"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => handleToggle(item)}
+                className={`text-xs px-2 py-1 rounded ${item.is_active ? 'text-status-error hover:bg-status-error-light' : 'text-status-success hover:bg-status-success-light'}`}
+              >
+                {item.is_active ? 'Desactivar' : 'Activar'}
+              </button>
+            </div>
+          </td>
+        </>
+      )}
+      onAdd={() => { setEditId(null); setName(''); setShowForm(true); }}
+      includeInactive={includeInactive}
+      onToggleInactive={() => setIncludeInactive(!includeInactive)}
+    >
+      {showForm && (
+        <InlineForm error={error} onCancel={() => setShowForm(false)} onSubmit={handleSubmit} isEdit={!!editId}>
+          <input
+            className="input"
+            placeholder="Nombre de la sucursal *"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </InlineForm>
+      )}
+    </CatalogTable>
+  );
+}
+
+// ─── Sucursales (catálogo para arqueo_records) ────────────────────────────────
+
+function SucursalesCatalog() {
+  const [items, setItems] = useState<Sucursal[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [name, setName] = useState('');
+  const [error, setError] = useState('');
+  const [includeInactive, setIncludeInactive] = useState(false);
+
+  useEffect(() => { load(); }, [includeInactive]);
+
+  const load = async () => {
+    const data = await catalogService.getSucursales(includeInactive);
+    setItems(data);
+  };
+
+  const handleSubmit = async () => {
+    setError('');
+    try {
+      if (editId) {
+        await catalogService.updateSucursal(editId, { name });
+      } else {
+        await catalogService.createSucursal(name);
+      }
+      setShowForm(false);
+      setEditId(null);
+      setName('');
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  };
+
+  const handleToggle = async (item: Sucursal) => {
+    try {
+      await catalogService.updateSucursal(item.id, { is_active: !item.is_active });
+      await load();
+    } catch (err) {
+      alert(getErrorMessage(err));
+    }
+  };
+
+  return (
+    <CatalogTable
+      title="Sucursales"
+      items={items}
+      columns={['Nombre', 'Estado', 'Acciones']}
+      renderRow={(item: Sucursal) => (
+        <>
+          <td className="px-4 py-3 font-medium">{item.name}</td>
+          <td className="px-4 py-3"><StatusBadge active={item.is_active} /></td>
+          <td className="px-4 py-3">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setEditId(item.id); setName(item.name); setShowForm(true); }}
                 className="btn-ghost text-xs px-2 py-1"
               >
                 <Pencil className="w-3.5 h-3.5" />

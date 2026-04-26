@@ -21,6 +21,12 @@ export interface Holiday {
   is_active: boolean;
 }
 
+export interface Sucursal {
+  id: number;
+  name: string;
+  is_active: boolean;
+}
+
 const catalogService = {
   // ─── Tipos de movimiento ─────────────────────────────────────────────────
   getMovementTypes: async (includeInactive = false): Promise<MovementType[]> => {
@@ -82,6 +88,27 @@ const catalogService = {
     updates: Partial<{ name: string; is_active: boolean }>,
   ): Promise<Holiday> => {
     const { data } = await api.patch(`/catalogs/holidays/${id}`, updates);
+    return data;
+  },
+
+  // ─── Sucursales ───────────────────────────────────────────────────────────
+  getSucursales: async (includeInactive = false): Promise<Sucursal[]> => {
+    const { data } = await api.get('/catalogs/sucursales', {
+      params: { include_inactive: includeInactive },
+    });
+    return data;
+  },
+
+  createSucursal: async (name: string): Promise<Sucursal> => {
+    const { data } = await api.post('/catalogs/sucursales', { name });
+    return data;
+  },
+
+  updateSucursal: async (
+    id: number,
+    updates: Partial<{ name: string; is_active: boolean }>,
+  ): Promise<Sucursal> => {
+    const { data } = await api.patch(`/catalogs/sucursales/${id}`, updates);
     return data;
   },
 };

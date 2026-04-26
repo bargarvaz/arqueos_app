@@ -4,11 +4,12 @@
 from fastapi import APIRouter, Depends, Query, status
 
 from app.catalogs import service as catalog_service
-from app.catalogs.models import MovementType, ModificationReason, Holiday
+from app.catalogs.models import MovementType, ModificationReason, Holiday, Sucursal
 from app.catalogs.schemas import (
     MovementTypeCreate, MovementTypeUpdate, MovementTypeResponse,
     ModificationReasonCreate, ModificationReasonUpdate, ModificationReasonResponse,
     HolidayCreate, HolidayUpdate, HolidayResponse,
+    SucursalCreate, SucursalUpdate, SucursalResponse,
 )
 from app.dependencies import require_admin, get_current_user, DbSession
 
@@ -99,5 +100,33 @@ async def update_holiday(
     item_id: int, body: HolidayUpdate, db: DbSession, admin=AdminUser
 ):
     return await catalog_service.update_holiday(
+        db, item_id, name=body.name, is_active=body.is_active
+    )
+
+
+# ─── Sucursales ───────────────────────────────────────────────────────────────
+
+@router.get("/sucursales", response_model=list[SucursalResponse])
+async def list_sucursales(
+    db: DbSession,
+    _=Depends(get_current_user),
+    include_inactive: bool = Query(default=False),
+    search: str | None = Query(default=None),
+):
+    return await catalog_service.list_catalog(db, Sucursal, include_inactive, search)
+
+
+@router.post(
+    "/sucursales", response_model=SucursalResponse, status_code=status.HTTP_201_CREATED
+)
+async def create_sucursal(body: SucursalCreate, db: DbSession, admin=AdminUser):
+    return await catalog_service.create_sucursal(db, body.name)
+
+
+@router.patch("/sucursales/{item_id}", response_model=SucursalResponse)
+async def update_sucursal(
+    item_id: int, body: SucursalUpdate, db: DbSession, admin=AdminUser
+):
+    return await catalog_service.update_sucursal(
         db, item_id, name=body.name, is_active=body.is_active
     )

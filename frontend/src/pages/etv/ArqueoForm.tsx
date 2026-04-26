@@ -11,8 +11,7 @@ import arqueoService, {
 } from '@/services/arqueoService';
 import { useDraft } from '@/hooks/useDraft';
 import { DENOMINATIONS, ROUTES, ARQUEO_STATUS } from '@/utils/constants';
-import catalogService, { MovementType } from '@/services/catalogService';
-import vaultService, { Branch } from '@/services/vaultService';
+import catalogService, { MovementType, Sucursal } from '@/services/catalogService';
 
 // ─── Esquema de validación Zod ────────────────────────────────────────────────
 
@@ -21,7 +20,7 @@ const recordSchema = z
     record_uid: z.string().optional(),
     voucher: z.string().min(1, 'Obligatorio').max(100),
     reference: z.string().min(1, 'Obligatorio').max(100),
-    branch_id: z.number({ invalid_type_error: 'Selecciona sucursal' }).min(1),
+    sucursal_id: z.number({ invalid_type_error: 'Selecciona sucursal' }).min(1),
     movement_type_id: z.number({ invalid_type_error: 'Selecciona tipo' }).min(1),
     entries: z.string().default('0'),
     withdrawals: z.string().default('0'),
@@ -65,7 +64,7 @@ function emptyRecord(date: string): RecordValues {
   const base: RecordValues = {
     voucher: '',
     reference: '',
-    branch_id: 0,
+    sucursal_id: 0,
     movement_type_id: 0,
     entries: '0',
     withdrawals: '0',
@@ -103,7 +102,7 @@ export default function ArqueoForm() {
   const state = location.state as LocationState | null;
 
   const [header, setHeader] = useState<ArqueoHeader | null>(null);
-  const [branches, setBranches] = useState<Branch[]>([]);
+  const [sucursales, setSucursales] = useState<Sucursal[]>([]);
   const [movementTypes, setMovementTypes] = useState<MovementType[]>([]);
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
@@ -152,12 +151,12 @@ export default function ArqueoForm() {
     Promise.all([
       arqueoService.getOrCreateHeader(state.vault.id, state.arqueo_date),
       catalogService.getMovementTypes(),
-      vaultService.listBranches(),
+      catalogService.getSucursales(),
     ])
-      .then(([h, mt, br]) => {
+      .then(([h, mt, suc]) => {
         setHeader(h);
         setMovementTypes(mt.filter((m) => m.is_active));
-        setBranches(br.filter((b) => b.is_active));
+        setSucursales(suc.filter((s) => s.is_active));
 
         // Si el header ya tiene registros (revisita), cargarlos — solo si no hay draft
         if (!localStorage.getItem(`arqueo_draft_${draftKey}`)) {
@@ -397,20 +396,20 @@ export default function ArqueoForm() {
                       <td className="px-2 py-1.5">
                         <Controller
                           control={control}
-                          name={`records.${idx}.branch_id`}
+                          name={`records.${idx}.sucursal_id`}
                           render={({ field: f }) => (
                             <select
                               {...f}
                               onChange={(e) => f.onChange(parseInt(e.target.value))}
                               disabled={readOnly}
                               className={`input w-28 ${
-                                errors.records?.[idx]?.branch_id ? 'input-error' : ''
+                                errors.records?.[idx]?.sucursal_id ? 'input-error' : ''
                               }`}
                             >
                               <option value={0}>— Sucursal —</option>
-                              {branches.map((b) => (
-                                <option key={b.id} value={b.id}>
-                                  {b.name}
+                              {sucursales.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name}
                                 </option>
                               ))}
                             </select>

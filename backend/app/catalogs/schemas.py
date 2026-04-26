@@ -65,3 +65,22 @@ class HolidayResponse(BaseModel):
     is_active: bool
 
     model_config = {"from_attributes": True}
+
+
+# ─── Sucursal ─────────────────────────────────────────────────────────────────
+
+class SucursalCreate(BaseModel):
+    name: str
+
+
+class SucursalUpdate(BaseModel):
+    name: str | None = None
+    is_active: bool | None = None
+
+
+class SucursalResponse(BaseModel):
+    id: int
+    name: str
+    is_active: bool
+
+    model_config = {"from_attributes": True}

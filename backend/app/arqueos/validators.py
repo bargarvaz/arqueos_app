@@ -106,7 +106,7 @@ def validate_required_fields(record_data: dict[str, Any]) -> list[str]:
         errors.append("El campo 'comprobante' es obligatorio.")
     if not str(record_data.get("reference", "")).strip():
         errors.append("El campo 'referencia' es obligatorio.")
-    if not record_data.get("branch_id"):
+    if not record_data.get("sucursal_id"):
         errors.append("La sucursal es obligatoria.")
     if not record_data.get("movement_type_id"):
         errors.append("El tipo de movimiento es obligatorio.")
@@ -129,7 +129,7 @@ def is_row_empty(record_data: dict[str, Any]) -> bool:
         if str(record_data.get(field, "")).strip():
             return False
 
-    if record_data.get("branch_id") or record_data.get("movement_type_id"):
+    if record_data.get("sucursal_id") or record_data.get("movement_type_id"):
         return False
 
     numeric_fields = ["entries", "withdrawals"] + list(DENOMINATION_MULTIPLIERS.keys())

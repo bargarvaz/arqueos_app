@@ -7,7 +7,7 @@ export interface VaultStatus {
     vault_code: string;
     vault_name: string;
     initial_balance: string;
-    branch_id: number;
+    sucursal_id: number | null;
   };
   today_status: 'draft' | 'published' | 'locked' | null;
   today_header_id: number | null;
@@ -20,7 +20,7 @@ export interface ArqueoRecord {
   arqueo_header_id: number;
   voucher: string;
   reference: string;
-  branch_id: number;
+  sucursal_id: number | null;
   entries: string;
   withdrawals: string;
   bill_1000: string;
@@ -72,7 +72,7 @@ export interface ArqueoHeaderWithRecords extends ArqueoHeader {
 export interface RecordCreatePayload {
   voucher: string;
   reference: string;
-  branch_id: number;
+  sucursal_id: number | null;
   movement_type_id: number;
   entries: string;
   withdrawals: string;

@@ -129,7 +129,7 @@ export default function ModificationForm() {
     setEditData({
       voucher: record.voucher,
       reference: record.reference,
-      branch_id: String(record.branch_id),
+      sucursal_id: String(record.sucursal_id ?? '0'),
       movement_type_id: String(record.movement_type_id),
       entries: record.entries,
       withdrawals: record.withdrawals,
@@ -234,7 +234,7 @@ export default function ModificationForm() {
                 setAction({ type: 'add' });
                 setEditData({
                   voucher: '', reference: '',
-                  branch_id: '0', movement_type_id: '0',
+                  sucursal_id: '0', movement_type_id: '0',
                   entries: '0', withdrawals: '0',
                   record_date: header.arqueo_date,
                   ...DENOMINATIONS.reduce((a, d) => ({ ...a, [d.key]: '0' }), {}),
