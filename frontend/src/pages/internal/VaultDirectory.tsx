@@ -1,6 +1,6 @@
-// Directorio de bóvedas para usuarios internos — CRUD completo (admin)
+// Directorio de bóvedas — consulta (activas/inactivas) con edición y gestión de estado
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Power, PowerOff, Edit2 } from 'lucide-react';
+import { Power, PowerOff, Edit2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -8,20 +8,10 @@ import type { ColumnDef } from '@tanstack/react-table';
 
 import DataTable from '@/components/tables/DataTable';
 import vaultService, { type Vault, type Branch } from '@/services/vaultService';
-import userService, { type Company, type UserResponse } from '@/services/userService';
+import userService, { type UserResponse } from '@/services/userService';
 import { formatCurrency } from '@/utils/formatters';
 import { getErrorMessage } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
-
-const createSchema = z.object({
-  vault_code: z.string().min(1, 'Código requerido.').max(20),
-  vault_name: z.string().min(2, 'Nombre requerido.').max(150),
-  company_id: z.number({ invalid_type_error: 'Selecciona empresa.' }).min(1),
-  branch_id: z.number({ invalid_type_error: 'Selecciona sucursal.' }).min(1),
-  manager_id: z.number().nullable().optional(),
-  treasurer_id: z.number().nullable().optional(),
-  initial_balance: z.string().regex(/^\d+(\.\d{1,2})?$/, 'Saldo inválido.'),
-});
 
 const editSchema = z.object({
   vault_name: z.string().min(2, 'Nombre requerido.').max(150),
@@ -30,7 +20,6 @@ const editSchema = z.object({
   treasurer_id: z.number().nullable().optional(),
 });
 
-type CreateForm = z.infer<typeof createSchema>;
 type EditForm = z.infer<typeof editSchema>;
 
 export default function VaultDirectory() {
@@ -45,22 +34,14 @@ export default function VaultDirectory() {
   const [includeInactive, setIncludeInactive] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const [companies, setCompanies] = useState<Company[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [etvUsers, setEtvUsers] = useState<UserResponse[]>([]);
 
-  const [showCreate, setShowCreate] = useState(false);
-  const [createError, setCreateError] = useState('');
   const [editTarget, setEditTarget] = useState<Vault | null>(null);
   const [editError, setEditError] = useState('');
   const [reactivateTarget, setReactivateTarget] = useState<Vault | null>(null);
   const [reactivateBalance, setReactivateBalance] = useState('0.00');
   const [reactivateError, setReactivateError] = useState('');
-
-  const createForm = useForm<CreateForm>({
-    resolver: zodResolver(createSchema),
-    defaultValues: { initial_balance: '0.00' },
-  });
 
   const editForm = useForm<EditForm>({ resolver: zodResolver(editSchema) });
 
@@ -85,11 +66,9 @@ export default function VaultDirectory() {
   useEffect(() => {
     if (!isAdmin) return;
     Promise.all([
-      userService.listCompanies(),
       vaultService.listBranches(),
       userService.listUsers({ page: 1, page_size: 0, role: 'etv', is_active: true }),
-    ]).then(([c, b, u]) => {
-      setCompanies(c);
+    ]).then(([b, u]) => {
       setBranches(b);
       setEtvUsers(u.items);
     }).catch(() => {});
@@ -148,26 +127,6 @@ export default function VaultDirectory() {
       await load();
     } catch (err) {
       setEditError(getErrorMessage(err));
-    }
-  };
-
-  const onCreateSubmit = async (data: CreateForm) => {
-    setCreateError('');
-    try {
-      await vaultService.createVault({
-        vault_code: data.vault_code.toUpperCase(),
-        vault_name: data.vault_name,
-        company_id: data.company_id,
-        branch_id: data.branch_id,
-        manager_id: data.manager_id ?? null,
-        treasurer_id: data.treasurer_id ?? null,
-        initial_balance: data.initial_balance,
-      });
-      setShowCreate(false);
-      createForm.reset({ initial_balance: '0.00' });
-      await load();
-    } catch (err) {
-      setCreateError(getErrorMessage(err));
     }
   };
 
@@ -263,26 +222,15 @@ export default function VaultDirectory() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-semibold text-text-primary">Directorio de Bóvedas</h1>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
-            <input
-              type="checkbox"
-              checked={includeInactive}
-              onChange={(e) => setIncludeInactive(e.target.checked)}
-              className="rounded"
-            />
-            Mostrar inactivas
-          </label>
-          {isAdmin && (
-            <button
-              onClick={() => { setShowCreate(true); setCreateError(''); createForm.reset({ initial_balance: '0.00' }); }}
-              className="btn-primary flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              Nueva bóveda
-            </button>
-          )}
-        </div>
+        <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+          <input
+            type="checkbox"
+            checked={includeInactive}
+            onChange={(e) => setIncludeInactive(e.target.checked)}
+            className="rounded"
+          />
+          Mostrar inactivas
+        </label>
       </div>
 
       <DataTable
@@ -297,109 +245,6 @@ export default function VaultDirectory() {
         searchPlaceholder="Buscar por código o nombre..."
         isLoading={isLoading}
       />
-
-      {/* ─── Modal Crear ─────────────────────────────────────────────── */}
-      {showCreate && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg w-full max-w-lg shadow-xl">
-            <div className="flex items-center justify-between p-5 border-b border-border">
-              <h2 className="text-base font-semibold text-text-primary">Nueva Bóveda</h2>
-              <button onClick={() => setShowCreate(false)} className="text-text-muted hover:text-text-primary text-lg leading-none">×</button>
-            </div>
-            <form onSubmit={createForm.handleSubmit(onCreateSubmit)} className="p-5 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="label">Código</label>
-                  <input
-                    type="text"
-                    placeholder="Ej. BOV-001"
-                    className={createForm.formState.errors.vault_code ? 'input-error uppercase' : 'input uppercase'}
-                    {...createForm.register('vault_code')}
-                  />
-                  {createForm.formState.errors.vault_code && (
-                    <p className="text-status-error text-xs mt-1">{createForm.formState.errors.vault_code.message}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="label">Saldo inicial</label>
-                  <input
-                    type="text"
-                    placeholder="0.00"
-                    className={createForm.formState.errors.initial_balance ? 'input-error' : 'input'}
-                    {...createForm.register('initial_balance')}
-                  />
-                  {createForm.formState.errors.initial_balance && (
-                    <p className="text-status-error text-xs mt-1">{createForm.formState.errors.initial_balance.message}</p>
-                  )}
-                </div>
-                <div className="col-span-2">
-                  <label className="label">Nombre</label>
-                  <input
-                    type="text"
-                    placeholder="Nombre descriptivo de la bóveda"
-                    className={createForm.formState.errors.vault_name ? 'input-error' : 'input'}
-                    {...createForm.register('vault_name')}
-                  />
-                  {createForm.formState.errors.vault_name && (
-                    <p className="text-status-error text-xs mt-1">{createForm.formState.errors.vault_name.message}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="label">ETV</label>
-                  <select
-                    className={createForm.formState.errors.company_id ? 'input-error' : 'input'}
-                    {...createForm.register('company_id', { valueAsNumber: true })}
-                  >
-                    <option value="">Seleccionar...</option>
-                    {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                  {createForm.formState.errors.company_id && (
-                    <p className="text-status-error text-xs mt-1">{createForm.formState.errors.company_id.message}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="label">Sucursal</label>
-                  <select
-                    className={createForm.formState.errors.branch_id ? 'input-error' : 'input'}
-                    {...createForm.register('branch_id', { valueAsNumber: true })}
-                  >
-                    <option value="">Seleccionar...</option>
-                    {branches.filter(b => b.is_active).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                  </select>
-                  {createForm.formState.errors.branch_id && (
-                    <p className="text-status-error text-xs mt-1">{createForm.formState.errors.branch_id.message}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="label">Gerente (opcional)</label>
-                  <select className="input" {...createForm.register('manager_id', { valueAsNumber: true })}>
-                    <option value="">Ninguno</option>
-                    {etvUsers.map(u => (
-                      <option key={u.id} value={u.id}>{u.full_name}{u.puesto ? ` — ${u.puesto}` : ''}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="label">Tesorero (opcional)</label>
-                  <select className="input" {...createForm.register('treasurer_id', { valueAsNumber: true })}>
-                    <option value="">Ninguno</option>
-                    {etvUsers.map(u => (
-                      <option key={u.id} value={u.id}>{u.full_name}{u.puesto ? ` — ${u.puesto}` : ''}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              {createError && <p className="text-status-error text-sm">{createError}</p>}
-              <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setShowCreate(false)} className="btn-secondary flex-1">Cancelar</button>
-                <button type="submit" disabled={createForm.formState.isSubmitting} className="btn-primary flex-1">
-                  {createForm.formState.isSubmitting ? 'Creando...' : 'Crear bóveda'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* ─── Modal Editar ─────────────────────────────────────────────── */}
       {editTarget && (
