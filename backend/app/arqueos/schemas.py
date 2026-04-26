@@ -10,6 +10,7 @@ from app.arqueos.models import ArqueoStatus, CounterpartType
 class ArqueoRecordCreate(BaseModel):
     """Datos para crear un registro individual de arqueo."""
 
+    record_uid: str | None = None  # presente al re-publicar, None para registros nuevos
     voucher: str = Field(min_length=1, max_length=100)
     reference: str = Field(min_length=1, max_length=100)
     sucursal_id: int | None = None
@@ -98,6 +99,8 @@ class PublishArqueoRequest(BaseModel):
 class ArqueoHeaderResponse(BaseModel):
     id: int
     vault_id: int
+    vault_code: str | None = None
+    vault_name: str | None = None
     arqueo_date: date
     opening_balance: Decimal
     closing_balance: Decimal

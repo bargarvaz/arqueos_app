@@ -473,12 +473,14 @@ async def list_modifiable_headers(
     if not vault_ids:
         return []
 
-    # Obtener headers publicados (no locked) de esas bóvedas
+    # Obtener headers publicados (no locked) de esas bóvedas, excluyendo hoy
+    # (el mismo día se re-publica en lugar de modificar)
     headers_result = await db.execute(
         select(ArqueoHeader)
         .where(
             ArqueoHeader.vault_id.in_(vault_ids),
             ArqueoHeader.status == ArqueoStatus.published,
+            ArqueoHeader.arqueo_date < today,
         )
         .order_by(ArqueoHeader.arqueo_date.desc())
     )

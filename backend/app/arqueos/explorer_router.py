@@ -10,12 +10,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_roles, get_current_user
 from app.users.models import User
-from app.arqueos.explorer_service import explore_records, download_records_xlsx
-from app.common.pagination import PaginationParams, PagedResponse
+from app.arqueos.explorer_service import explore_records, download_records_xlsx, get_vault_day_balances
+from app.common.pagination import PaginationParams, PagedResponse, MAX_TOTAL_RECORDS
 
 router = APIRouter(prefix="/arqueos/explorer", tags=["Explorador de Arqueos"])
 
 _INTERNAL_ROLES = ("admin", "operations", "data_science")
+
+
+@router.get(
+    "/vault-balances",
+    summary="Saldos apertura/cierre por bóveda para una fecha dada",
+)
+async def get_vault_balances_endpoint(
+    target_date: date | None = Query(None, alias="date"),
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_roles(*_INTERNAL_ROLES)),
+):
+    d = target_date or date.today()
+    return await get_vault_day_balances(db, d)
 
 
 @router.get(
@@ -48,12 +61,13 @@ async def get_explorer(
         page=pagination.page,
         page_size=pagination.page_size,
     )
+    effective_size = pagination.page_size or MAX_TOTAL_RECORDS
     return {
         "items": rows,
         "total": total,
         "page": pagination.page,
         "page_size": pagination.page_size,
-        "pages": max(1, -(-total // pagination.page_size)),
+        "pages": max(1, -(-total // effective_size)),
     }
 
 

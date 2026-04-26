@@ -197,6 +197,22 @@ export default function ArqueoForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ─── Auto-colapso de denominaciones al cuadrar ──────────────────────────────
+
+  useEffect(() => {
+    if (expandedRow === null) return;
+    const record = records[expandedRow];
+    if (!record) return;
+    const entries = parseFloat(record.entries) || 0;
+    const withdrawals = parseFloat(record.withdrawals) || 0;
+    const activeAmount = entries > 0 ? entries : withdrawals;
+    if (activeAmount === 0) return;
+    const denomSum = calcDenomSum(record);
+    if (Math.abs(denomSum - activeAmount) <= 0.001) {
+      setExpandedRow(null);
+    }
+  }, [records, expandedRow]);
+
   // ─── Publicar ────────────────────────────────────────────────────────────────
 
   const onSubmit = async (values: FormValues) => {
@@ -216,6 +232,8 @@ export default function ArqueoForm() {
         records: nonEmpty.map((r) => ({
           ...r,
           record_date: state.arqueo_date,
+          entries: r.entries || '0',
+          withdrawals: r.withdrawals || '0',
         })) as RecordCreatePayload[],
         updated_at: header.updated_at,
       });
@@ -259,7 +277,7 @@ export default function ArqueoForm() {
 
   const isPublished = header?.status === ARQUEO_STATUS.PUBLISHED;
   const isLocked = header?.status === ARQUEO_STATUS.LOCKED;
-  const readOnly = isPublished || isLocked;
+  const readOnly = isLocked;
 
   if (loading) {
     return (
@@ -331,13 +349,15 @@ export default function ArqueoForm() {
         </div>
       )}
 
-      {readOnly && (
+      {isLocked && (
         <div className="mb-4 p-3 bg-info/10 border border-info rounded-lg text-sm">
-          Este arqueo fue{' '}
-          <span className="font-medium">
-            {isLocked ? 'bloqueado' : 'publicado'}
-          </span>
-          . Solo lectura.
+          Este arqueo está <span className="font-medium">bloqueado</span>. Solo lectura.
+        </div>
+      )}
+
+      {isPublished && !isLocked && (
+        <div className="mb-4 p-3 bg-success/10 border border-success rounded-lg text-sm">
+          Arqueo publicado. Puedes corregirlo y volver a publicarlo durante el día de hoy.
         </div>
       )}
 
@@ -462,7 +482,8 @@ export default function ArqueoForm() {
                           min="0"
                           {...register(`records.${idx}.entries`)}
                           disabled={readOnly}
-                          placeholder="0.00"
+                          placeholder=""
+                          onClick={() => setExpandedRow(idx)}
                           className={`input w-24 text-right ${
                             errors.records?.[idx]?.entries ? 'input-error' : ''
                           }`}
@@ -477,7 +498,8 @@ export default function ArqueoForm() {
                           min="0"
                           {...register(`records.${idx}.withdrawals`)}
                           disabled={readOnly}
-                          placeholder="0.00"
+                          placeholder=""
+                          onClick={() => setExpandedRow(idx)}
                           className="input w-24 text-right"
                         />
                       </td>

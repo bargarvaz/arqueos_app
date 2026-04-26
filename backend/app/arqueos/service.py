@@ -391,7 +391,13 @@ async def publish_arqueo(
             await db.flush()
             saved_records.append(rec)
 
-    # 7. Calcular closing_balance
+    # 7. Desactivar registros previos que ya no están en la nueva publicación
+    matched_uids = {r.record_uid for r in saved_records}
+    for uid, rec in existing_records.items():
+        if uid not in matched_uids:
+            rec.is_active = False
+
+    # 8. Calcular closing_balance
     all_active_records = await db.execute(
         select(ArqueoRecord).where(
             ArqueoRecord.arqueo_header_id == header.id,

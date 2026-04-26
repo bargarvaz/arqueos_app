@@ -112,7 +112,11 @@ def generate_records_xlsx(
         "UID", "Fecha Arqueo", "Empresa", "Bóveda",
         "Comprobante", "Referencia", "Sucursal",
         "Tipo Movimiento", "Entradas", "Salidas",
-        "Fecha Registro", "Estado"
+        # Billetes
+        "$1,000", "$500", "$200", "$100", "$50", "$20",
+        # Monedas
+        "$10", "$5", "$2", "$1", "$0.50", "$0.20", "$0.10",
+        "Fecha Registro", "Estado",
     ]
     ws.append(headers)
     _style_header_row(ws, 4, len(headers))
@@ -129,11 +133,30 @@ def generate_records_xlsx(
             row.get("movement_type_name", ""),
             row.get("entries", 0),
             row.get("withdrawals", 0),
+            # Billetes
+            row.get("bill_1000", 0),
+            row.get("bill_500", 0),
+            row.get("bill_200", 0),
+            row.get("bill_100", 0),
+            row.get("bill_50", 0),
+            row.get("bill_20", 0),
+            # Monedas
+            row.get("coin_100", 0),
+            row.get("coin_50", 0),
+            row.get("coin_20", 0),
+            row.get("coin_10", 0),
+            row.get("coin_5", 0),
+            row.get("coin_2", 0),
+            row.get("coin_1", 0),
+            row.get("coin_050", 0),
+            row.get("coin_020", 0),
+            row.get("coin_010", 0),
             row.get("record_date", ""),
-            "Activo" if row.get("is_active") else "Inactivo",
+            row.get("header_status", ""),
         ])
 
-    for row_cells in ws.iter_rows(min_row=5, min_col=9, max_col=10):
+    # Formato numérico: Entradas, Salidas + todas las denominaciones (cols 9-26)
+    for row_cells in ws.iter_rows(min_row=5, min_col=9, max_col=26):
         for cell in row_cells:
             cell.number_format = '#,##0.00'
 

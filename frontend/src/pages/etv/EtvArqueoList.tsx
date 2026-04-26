@@ -9,6 +9,8 @@ import { ROUTES } from '@/utils/constants';
 interface ArqueoHeader {
   id: number;
   vault_id: number;
+  vault_code: string | null;
+  vault_name: string | null;
   arqueo_date: string;
   opening_balance: string;
   closing_balance: string;
@@ -154,7 +156,17 @@ export default function EtvArqueoList() {
                   </td>
                   <td className="px-4 py-3">
                     <button
-                      onClick={() => navigate(`${ROUTES.ETV_ARQUEO_FORM}/${a.vault_id}/${a.arqueo_date}`)}
+                      onClick={() => navigate(ROUTES.ETV_ARQUEO_FORM, {
+                        state: {
+                          vault: {
+                            id: a.vault_id,
+                            vault_code: a.vault_code ?? '',
+                            vault_name: a.vault_name ?? `Bóveda #${a.vault_id}`,
+                          },
+                          arqueo_date: a.arqueo_date,
+                          header_id: a.id,
+                        },
+                      })}
                       className="flex items-center gap-1 text-xs text-primary hover:bg-primary/10 px-2 py-1 rounded"
                     >
                       <Eye className="w-3.5 h-3.5" />

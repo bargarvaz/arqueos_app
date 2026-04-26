@@ -5,6 +5,7 @@ Soporta filtros combinados y descarga XLSX con auditoría.
 """
 
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -83,10 +84,11 @@ async def explore_records(
     count_q = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_q)).scalar_one()
 
-    offset = (page - 1) * page_size
+    effective_limit = page_size if page_size > 0 else 10_000
+    offset = (page - 1) * page_size if page_size > 0 else 0
     query = query.order_by(
         ArqueoHeader.arqueo_date.desc(), ArqueoRecord.id
-    ).offset(offset).limit(page_size)
+    ).offset(offset).limit(effective_limit)
 
     result = await db.execute(query)
     rows_raw = result.all()
@@ -110,6 +112,22 @@ async def explore_records(
             "movement_type_name": movement_type_name or "",
             "entries": float(record.entries),
             "withdrawals": float(record.withdrawals),
+            "bill_1000": float(record.bill_1000),
+            "bill_500": float(record.bill_500),
+            "bill_200": float(record.bill_200),
+            "bill_100": float(record.bill_100),
+            "bill_50": float(record.bill_50),
+            "bill_20": float(record.bill_20),
+            "coin_100": float(record.coin_100),
+            "coin_50": float(record.coin_50),
+            "coin_20": float(record.coin_20),
+            "coin_10": float(record.coin_10),
+            "coin_5": float(record.coin_5),
+            "coin_2": float(record.coin_2),
+            "coin_1": float(record.coin_1),
+            "coin_050": float(record.coin_050),
+            "coin_020": float(record.coin_020),
+            "coin_010": float(record.coin_010),
             "record_date": str(record.record_date),
             "header_status": header_status,
             "is_counterpart": record.is_counterpart,
@@ -132,7 +150,11 @@ async def download_records_xlsx(
 
     rows, _ = await explore_records(db, page=1, page_size=10_000, **filters)
 
-    filters_clean = {k: v for k, v in filters.items() if v is not None}
+    filters_clean = {
+        k: str(v) if isinstance(v, date) else v
+        for k, v in filters.items()
+        if v is not None
+    }
 
     await log_action(
         db,
@@ -147,3 +169,83 @@ async def download_records_xlsx(
     await db.commit()
 
     return generate_records_xlsx(rows, filters_clean)
+
+
+async def get_vault_day_balances(
+    db: AsyncSession,
+    target_date: date,
+) -> list[dict]:
+    """
+    Retorna opening_balance, closing_balance y status para cada bóveda activa
+    en una fecha dada. Si no hay header ese día, opening = último closing anterior
+    (o initial_balance si es la primera vez).
+    """
+    vaults_result = await db.execute(
+        select(Vault).where(Vault.is_active == True).order_by(Vault.vault_code)
+    )
+    vaults = list(vaults_result.scalars().all())
+    if not vaults:
+        return []
+
+    vault_ids = [v.id for v in vaults]
+
+    # Headers del día solicitado
+    headers_result = await db.execute(
+        select(ArqueoHeader).where(
+            ArqueoHeader.vault_id.in_(vault_ids),
+            ArqueoHeader.arqueo_date == target_date,
+        )
+    )
+    today_headers: dict[int, ArqueoHeader] = {
+        h.vault_id: h for h in headers_result.scalars().all()
+    }
+
+    # Para bóvedas sin header hoy: buscar el closing_balance del día más reciente anterior
+    vaults_without = [vid for vid in vault_ids if vid not in today_headers]
+    last_closing_map: dict[int, Decimal] = {}
+    if vaults_without:
+        subq = (
+            select(
+                ArqueoHeader.vault_id,
+                func.max(ArqueoHeader.arqueo_date).label("last_date"),
+            )
+            .where(
+                ArqueoHeader.vault_id.in_(vaults_without),
+                ArqueoHeader.arqueo_date < target_date,
+            )
+            .group_by(ArqueoHeader.vault_id)
+            .subquery()
+        )
+        last_result = await db.execute(
+            select(ArqueoHeader.vault_id, ArqueoHeader.closing_balance).join(
+                subq,
+                and_(
+                    ArqueoHeader.vault_id == subq.c.vault_id,
+                    ArqueoHeader.arqueo_date == subq.c.last_date,
+                ),
+            )
+        )
+        for vid, cb in last_result.all():
+            last_closing_map[vid] = cb
+
+    rows = []
+    for v in vaults:
+        h = today_headers.get(v.id)
+        if h:
+            opening = float(h.opening_balance)
+            closing = float(h.closing_balance)
+            status: str | None = h.status
+        else:
+            prior = last_closing_map.get(v.id)
+            opening = float(prior) if prior is not None else float(v.initial_balance)
+            closing = opening
+            status = None
+        rows.append({
+            "vault_id": v.id,
+            "vault_code": v.vault_code,
+            "vault_name": v.vault_name,
+            "opening_balance": opening,
+            "closing_balance": closing,
+            "status": status,
+        })
+    return rows

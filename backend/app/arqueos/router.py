@@ -80,6 +80,7 @@ async def list_my_arqueo_history(
     """Retorna todos los arqueos de las bóvedas asignadas al ETV, paginados."""
     from sqlalchemy import select
     from app.users.models import UserVaultAssignment
+    from app.vaults.models import Vault
     assigned_q = select(UserVaultAssignment.vault_id).where(
         UserVaultAssignment.user_id == current_user.id,
         UserVaultAssignment.is_active == True,
@@ -97,7 +98,22 @@ async def list_my_arqueo_history(
         page=pagination.page,
         page_size=pagination.page_size,
     )
-    return PagedResponse.build(headers, total, pagination)
+
+    # Enriquecer con vault_code y vault_name para la navegación del frontend
+    vault_result = await db.execute(
+        select(Vault).where(Vault.id.in_(all_vault_ids))
+    )
+    vault_map = {v.id: v for v in vault_result.scalars().all()}
+
+    enriched = []
+    for h in headers:
+        vault = vault_map.get(h.vault_id)
+        item = ArqueoHeaderResponse.model_validate(h)
+        item.vault_code = vault.vault_code if vault else None
+        item.vault_name = vault.vault_name if vault else None
+        enriched.append(item)
+
+    return PagedResponse.build(enriched, total, pagination)
 
 
 @router.get(

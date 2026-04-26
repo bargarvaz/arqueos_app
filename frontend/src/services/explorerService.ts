@@ -15,6 +15,22 @@ export interface ExplorerRecord {
   movement_type_name: string;
   entries: number;
   withdrawals: number;
+  bill_1000: number;
+  bill_500: number;
+  bill_200: number;
+  bill_100: number;
+  bill_50: number;
+  bill_20: number;
+  coin_100: number;
+  coin_50: number;
+  coin_20: number;
+  coin_10: number;
+  coin_5: number;
+  coin_2: number;
+  coin_1: number;
+  coin_050: number;
+  coin_020: number;
+  coin_010: number;
   record_date: string;
   header_status: string;
   is_counterpart: boolean;
@@ -35,9 +51,25 @@ export interface ExplorerFilters {
   page_size?: number;
 }
 
+export interface VaultDayBalance {
+  vault_id: number;
+  vault_code: string;
+  vault_name: string;
+  opening_balance: number;
+  closing_balance: number;
+  status: string | null;
+}
+
 const explorerService = {
   getRecords: async (filters: ExplorerFilters) => {
     const { data } = await api.get('/arqueos/explorer', { params: filters });
+    return data;
+  },
+
+  getVaultBalances: async (date?: string): Promise<VaultDayBalance[]> => {
+    const { data } = await api.get('/arqueos/explorer/vault-balances', {
+      params: date ? { date } : undefined,
+    });
     return data;
   },
 
