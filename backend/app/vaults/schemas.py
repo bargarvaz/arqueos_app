@@ -57,7 +57,7 @@ class VaultCreate(BaseModel):
     vault_name: str
     company_id: int           # ETV (transportadora)
     empresa_id: int | None = None  # Sub-empresa dentro de la ETV
-    branch_id: int
+    # branch_id se resuelve automáticamente desde vault_code en el servicio
     manager_id: int | None = None
     treasurer_id: int | None = None
     initial_balance: Decimal = Field(default=Decimal("0.00"), ge=0)
@@ -66,7 +66,6 @@ class VaultCreate(BaseModel):
 class VaultUpdate(BaseModel):
     vault_name: str | None = None
     empresa_id: int | None = None
-    branch_id: int | None = None
     manager_id: int | None = None
     treasurer_id: int | None = None
 
@@ -85,6 +84,7 @@ class VaultResponse(BaseModel):
     manager_id: int | None
     treasurer_id: int | None
     initial_balance: Decimal
+    current_balance: Decimal | None = None  # Último closing publicado (None si nunca arqueada)
     is_active: bool
     deactivated_at: datetime | None
     reactivated_at: datetime | None

@@ -505,6 +505,108 @@ async def _cascade_task(vault_id: int, from_date: date) -> None:
             logger.error("Error en cascada vault_id=%d: %s", vault_id, exc)
 
 
+async def auto_publish_expired_drafts(db: AsyncSession, target_date: date) -> list[int]:
+    """
+    Publica automáticamente en blanco todos los headers en estado 'draft'
+    cuya arqueo_date sea anterior a target_date.
+
+    Retorna lista de header_ids que fueron auto-publicados.
+    """
+    result = await db.execute(
+        select(ArqueoHeader).where(
+            ArqueoHeader.status == ArqueoStatus.draft,
+            ArqueoHeader.arqueo_date < target_date,
+        )
+    )
+    drafts = result.scalars().all()
+    auto_ids: list[int] = []
+
+    for header in drafts:
+        # closing_balance = opening_balance (sin registros = sin movimientos)
+        header.status = ArqueoStatus.published
+        header.auto_published = True
+        header.closing_balance = header.opening_balance
+        if not header.published_at:
+            header.published_at = datetime.now(timezone.utc)
+        auto_ids.append(header.id)
+        logger.info(
+            "Auto-publicado en blanco: header_id=%d vault_id=%d fecha=%s",
+            header.id, header.vault_id, header.arqueo_date,
+        )
+
+    if auto_ids:
+        await db.commit()
+
+    return auto_ids
+
+
+async def ensure_blank_headers_for_range(
+    db: AsyncSession,
+    vault_id: int,
+    start_date: date,
+    end_date: date,
+    created_by: int,
+) -> list[int]:
+    """
+    Asegura que existe un header (auto_published en blanco si falta) para cada
+    día en [start_date, end_date]. Útil para que el ETV pueda agregar movimientos
+    vía modificaciones a días que nunca se arquearon.
+
+    No toca días que ya tienen header. Calcula opening de los días faltantes
+    como el último closing previo (o initial_balance).
+
+    Retorna la lista de header_ids creados.
+    """
+    if start_date > end_date:
+        return []
+
+    # Días ya con header
+    existing_q = await db.execute(
+        select(ArqueoHeader.arqueo_date).where(
+            ArqueoHeader.vault_id == vault_id,
+            ArqueoHeader.arqueo_date >= start_date,
+            ArqueoHeader.arqueo_date <= end_date,
+        )
+    )
+    existing_dates = {row[0] for row in existing_q.all()}
+
+    # Si todos los días ya están cubiertos, salir rápido
+    total_days = (end_date - start_date).days + 1
+    if len(existing_dates) >= total_days:
+        return []
+
+    from datetime import timedelta
+
+    created_ids: list[int] = []
+    current = start_date
+    while current <= end_date:
+        if current not in existing_dates:
+            opening = await _get_opening_balance(db, vault_id, current)
+            header = ArqueoHeader(
+                vault_id=vault_id,
+                arqueo_date=current,
+                opening_balance=opening,
+                closing_balance=opening,
+                status=ArqueoStatus.published,
+                auto_published=True,
+                published_at=datetime.now(timezone.utc),
+                created_by=created_by,
+            )
+            db.add(header)
+            await db.flush()
+            created_ids.append(header.id)
+        current += timedelta(days=1)
+
+    if created_ids:
+        await db.commit()
+        logger.info(
+            "ensure_blank_headers: %d headers en blanco creados para vault_id=%d (%s..%s)",
+            len(created_ids), vault_id, start_date, end_date,
+        )
+
+    return created_ids
+
+
 def _record_snapshot(record: ArqueoRecord) -> dict:
     """Genera un snapshot JSONB del registro para el audit log."""
     return {

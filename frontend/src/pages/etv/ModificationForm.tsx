@@ -1,9 +1,9 @@
 // Formulario de modificación de un arqueo publicado (ETV)
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import arqueoService, { ArqueoHeaderWithRecords, ArqueoRecord } from '@/services/arqueoService';
 import modificationService, { GracePeriod } from '@/services/modificationService';
-import catalogService, { MovementType } from '@/services/catalogService';
+import catalogService, { MovementType, Sucursal } from '@/services/catalogService';
 import { ROUTES, DENOMINATIONS } from '@/utils/constants';
 
 interface ModificationReason {
@@ -12,13 +12,19 @@ interface ModificationReason {
   is_active: boolean;
 }
 
-interface ActionState {
-  type: 'cancel' | 'edit' | 'add' | null;
+interface ActiveAction {
+  type: 'cancel' | 'edit' | 'add';
   record?: ArqueoRecord;
 }
 
 const formatMXN = (v: string | number) =>
   parseFloat(String(v)).toLocaleString('es-MX', { minimumFractionDigits: 2 });
+
+function calcDenomSum(data: Record<string, string>): number {
+  return DENOMINATIONS.reduce((acc, d) => acc + (parseFloat(data[d.key] || '0') || 0), 0);
+}
+
+// ─── Componente ───────────────────────────────────────────────────────────────
 
 export default function ModificationForm() {
   const { headerId } = useParams<{ headerId: string }>();
@@ -28,13 +34,15 @@ export default function ModificationForm() {
   const [gracePeriod, setGracePeriod] = useState<GracePeriod | null>(null);
   const [reasons, setReasons] = useState<ModificationReason[]>([]);
   const [movementTypes, setMovementTypes] = useState<MovementType[]>([]);
+  const [sucursales, setSucursales] = useState<Sucursal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const [action, setAction] = useState<ActionState>({ type: null });
+  const [action, setAction] = useState<ActiveAction | null>(null);
   const [reasonId, setReasonId] = useState(0);
   const [reasonDetail, setReasonDetail] = useState('');
   const [editData, setEditData] = useState<Record<string, string>>({});
+  const [expandedDenom, setExpandedDenom] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [actionError, setActionError] = useState('');
 
@@ -42,18 +50,19 @@ export default function ModificationForm() {
 
   useEffect(() => {
     if (!id) return;
-
     Promise.all([
       arqueoService.getHeader(id),
       modificationService.getGracePeriod(id),
       catalogService.getModificationReasons() as Promise<ModificationReason[]>,
       catalogService.getMovementTypes(),
+      catalogService.getSucursales(),
     ])
-      .then(([h, gp, r, mt]) => {
+      .then(([h, gp, r, mt, suc]) => {
         setHeader(h);
         setGracePeriod(gp);
         setReasons(r.filter((x) => x.is_active));
         setMovementTypes(mt.filter((m) => m.is_active));
+        setSucursales(suc.filter((s) => s.is_active));
       })
       .catch(() => setError('Error al cargar el arqueo.'))
       .finally(() => setLoading(false));
@@ -64,8 +73,53 @@ export default function ModificationForm() {
     setHeader(h);
   };
 
+  // ─── Abrir / cerrar acción ────────────────────────────────────────────────────
+
+  const openAction = (type: ActiveAction['type'], record?: ArqueoRecord) => {
+    setAction({ type, record });
+    setReasonId(0);
+    setReasonDetail('');
+    setExpandedDenom(false);
+    setActionError('');
+
+    if (type === 'edit' && record) {
+      setEditData({
+        voucher: record.voucher,
+        reference: record.reference,
+        sucursal_id: String(record.sucursal_id ?? '0'),
+        movement_type_id: String(record.movement_type_id),
+        entries: record.entries,
+        withdrawals: record.withdrawals,
+        record_date: record.record_date,
+        ...DENOMINATIONS.reduce((acc, d) => {
+          acc[d.key] = (record as unknown as Record<string, string>)[d.key] || '0';
+          return acc;
+        }, {} as Record<string, string>),
+      });
+    } else if (type === 'add') {
+      setEditData({
+        voucher: '',
+        reference: '',
+        sucursal_id: '0',
+        movement_type_id: '0',
+        entries: '0',
+        withdrawals: '0',
+        record_date: header?.arqueo_date || '',
+        ...DENOMINATIONS.reduce((a, d) => ({ ...a, [d.key]: '0' }), {}),
+      });
+    }
+  };
+
+  const closeAction = () => {
+    setAction(null);
+    setEditData({});
+    setExpandedDenom(false);
+  };
+
+  // ─── Handlers ────────────────────────────────────────────────────────────────
+
   const handleCancel = async () => {
-    if (!action.record || !reasonId) return;
+    if (!action?.record || !reasonId) return;
     setProcessing(true);
     setActionError('');
     try {
@@ -73,7 +127,7 @@ export default function ModificationForm() {
         reason_id: reasonId,
         reason_detail: reasonDetail || undefined,
       });
-      setAction({ type: null });
+      closeAction();
       await reloadHeader();
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } };
@@ -84,7 +138,7 @@ export default function ModificationForm() {
   };
 
   const handleEdit = async () => {
-    if (!action.record || !reasonId) return;
+    if (!action?.record || !reasonId) return;
     setProcessing(true);
     setActionError('');
     try {
@@ -93,7 +147,7 @@ export default function ModificationForm() {
         reason_detail: reasonDetail || undefined,
         new_data: editData,
       });
-      setAction({ type: null });
+      closeAction();
       await reloadHeader();
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } };
@@ -113,8 +167,7 @@ export default function ModificationForm() {
         reason_id: reasonId,
         reason_detail: reasonDetail || undefined,
       });
-      setAction({ type: null });
-      setEditData({});
+      closeAction();
       await reloadHeader();
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } };
@@ -124,25 +177,7 @@ export default function ModificationForm() {
     }
   };
 
-  const openEdit = (record: ArqueoRecord) => {
-    setAction({ type: 'edit', record });
-    setEditData({
-      voucher: record.voucher,
-      reference: record.reference,
-      sucursal_id: String(record.sucursal_id ?? '0'),
-      movement_type_id: String(record.movement_type_id),
-      entries: record.entries,
-      withdrawals: record.withdrawals,
-      record_date: record.record_date,
-      ...DENOMINATIONS.reduce((acc, d) => {
-        acc[d.key] = (record as unknown as Record<string, string>)[d.key] || '0';
-        return acc;
-      }, {} as Record<string, string>),
-    });
-    setReasonId(0);
-    setReasonDetail('');
-    setActionError('');
-  };
+  // ─── Render helpers ───────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -160,156 +195,467 @@ export default function ModificationForm() {
     );
   }
 
-  const activeRecords = header.records.filter(
-    (r) => r.is_active && !r.is_counterpart
-  );
+  const activeRecords = header.records.filter((r) => r.is_active && !r.is_counterpart);
   const counterpartRecords = header.records.filter((r) => r.is_counterpart);
+  const canAct = gracePeriod?.is_within_grace;
 
-  return (
-    <div className="max-w-5xl mx-auto">
-      {/* Encabezado */}
-      <div className="mb-6">
+  // Número de columnas: # | Comprobante | Referencia | Sucursal | Tipo Mov | Entradas | Salidas | Denom | [Acciones]
+  const colCount = canAct ? 9 : 8;
+
+  const sucursalName = (id: number | null) =>
+    sucursales.find((s) => s.id === id)?.name || '—';
+
+  const movTypeName = (id: number) =>
+    movementTypes.find((m) => m.id === id)?.name || '—';
+
+  // ─── Panel de denominaciones + motivo (aparece debajo de la fila activa) ──────
+  const renderActionPanel = (type: ActiveAction['type']) => {
+    const isEditOrAdd = type === 'edit' || type === 'add';
+    const denomSum = calcDenomSum(editData);
+    const activeAmount =
+      parseFloat(editData.entries || '0') > 0
+        ? parseFloat(editData.entries || '0')
+        : parseFloat(editData.withdrawals || '0');
+    const denomError =
+      isEditOrAdd && activeAmount > 0 && Math.abs(denomSum - activeAmount) > 0.001
+        ? `Suma denominaciones: $${formatMXN(denomSum)} ≠ monto: $${formatMXN(activeAmount)}`
+        : null;
+
+    return (
+      <tr className="bg-primary/5">
+        <td colSpan={colCount} className="px-4 py-4">
+          <div className="space-y-4">
+            {/* Denominaciones — solo en edit/add */}
+            {isEditOrAdd && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setExpandedDenom((v) => !v)}
+                  className={`text-xs px-3 py-1 rounded border mb-2 ${
+                    denomError
+                      ? 'border-error text-error bg-error/10'
+                      : expandedDenom
+                      ? 'border-primary text-primary bg-primary/10'
+                      : 'border-border text-text-muted hover:border-primary hover:text-primary'
+                  }`}
+                >
+                  {expandedDenom ? '▲' : '▼'} Desglose de denominaciones
+                  {denomError && ' ⚠'}
+                </button>
+
+                {expandedDenom && (
+                  <div className="flex flex-wrap gap-x-6 gap-y-2 mb-3 p-3 bg-surface/60 rounded-lg border border-border/40">
+                    <div className="w-full text-xs font-medium text-text-muted mb-1">Billetes</div>
+                    {DENOMINATIONS.filter((d) => d.type === 'bill').map((d) => (
+                      <div key={d.key} className="flex items-center gap-1">
+                        <label className="text-xs text-text-muted w-14 text-right">{d.label}</label>
+                        <input
+                          type="number"
+                          step={d.multiplier}
+                          min="0"
+                          className="input w-24 text-right text-xs"
+                          value={editData[d.key] || '0'}
+                          onChange={(e) => setEditData((p) => ({ ...p, [d.key]: e.target.value }))}
+                        />
+                      </div>
+                    ))}
+                    <div className="w-full text-xs font-medium text-text-muted mt-2 mb-1">Monedas</div>
+                    {DENOMINATIONS.filter((d) => d.type === 'coin').map((d) => (
+                      <div key={d.key} className="flex items-center gap-1">
+                        <label className="text-xs text-text-muted w-14 text-right">{d.label}</label>
+                        <input
+                          type="number"
+                          step={d.multiplier}
+                          min="0"
+                          className="input w-24 text-right text-xs"
+                          value={editData[d.key] || '0'}
+                          onChange={(e) => setEditData((p) => ({ ...p, [d.key]: e.target.value }))}
+                        />
+                      </div>
+                    ))}
+                    {denomError && (
+                      <p className="w-full text-error text-xs font-medium mt-1">{denomError}</p>
+                    )}
+                    <p className="w-full text-xs text-text-muted">
+                      Suma denominaciones:{' '}
+                      <span className="font-medium">${formatMXN(denomSum)}</span>
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Motivo de modificación + Detalle */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label text-xs">Motivo de modificación *</label>
+                <select
+                  className="input"
+                  value={reasonId}
+                  onChange={(e) => setReasonId(parseInt(e.target.value))}
+                >
+                  <option value={0}>— Seleccionar motivo —</option>
+                  {reasons.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="label text-xs">Detalle adicional (opcional)</label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="Descripción libre"
+                  value={reasonDetail}
+                  onChange={(e) => setReasonDetail(e.target.value)}
+                  maxLength={500}
+                />
+              </div>
+            </div>
+
+            {actionError && <p className="text-error text-xs">{actionError}</p>}
+
+            <div className="flex gap-3">
+              <button type="button" className="btn btn-ghost text-sm" onClick={closeAction}>
+                Cerrar
+              </button>
+              <button
+                type="button"
+                disabled={processing || !reasonId}
+                onClick={
+                  type === 'cancel' ? handleCancel : type === 'edit' ? handleEdit : handleAdd
+                }
+                className="btn btn-primary text-sm"
+              >
+                {processing
+                  ? 'Procesando...'
+                  : type === 'cancel'
+                  ? 'Confirmar cancelación'
+                  : type === 'edit'
+                  ? 'Confirmar edición'
+                  : 'Agregar registro'}
+              </button>
+            </div>
+          </div>
+        </td>
+      </tr>
+    );
+  };
+
+  // Fila editable (edit / add) — misma estructura que ArqueoForm
+  const renderEditRow = (rowNum: number | string) => (
+    <tr className="border-b border-primary/40 bg-primary/5">
+      {/* # */}
+      <td className="px-2 py-1.5 text-text-muted text-sm">{rowNum}</td>
+
+      {/* Comprobante */}
+      <td className="px-2 py-1.5">
+        <input
+          type="text"
+          placeholder="Comprobante"
+          className="input w-24"
+          value={editData.voucher || ''}
+          onChange={(e) => setEditData((p) => ({ ...p, voucher: e.target.value }))}
+        />
+      </td>
+
+      {/* Referencia */}
+      <td className="px-2 py-1.5">
+        <input
+          type="text"
+          placeholder="Referencia"
+          className="input w-24"
+          value={editData.reference || ''}
+          onChange={(e) => setEditData((p) => ({ ...p, reference: e.target.value }))}
+        />
+      </td>
+
+      {/* Nombre Sucursal */}
+      <td className="px-2 py-1.5">
+        <select
+          className="input w-28"
+          value={editData.sucursal_id || '0'}
+          onChange={(e) => setEditData((p) => ({ ...p, sucursal_id: e.target.value }))}
+        >
+          <option value="0">— Sucursal —</option>
+          {sucursales.map((s) => (
+            <option key={s.id} value={String(s.id)}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+      </td>
+
+      {/* Tipo Movimiento */}
+      <td className="px-2 py-1.5">
+        <select
+          className="input w-36"
+          value={editData.movement_type_id || '0'}
+          onChange={(e) => setEditData((p) => ({ ...p, movement_type_id: e.target.value }))}
+        >
+          <option value="0">— Tipo —</option>
+          {movementTypes.map((mt) => (
+            <option key={mt.id} value={String(mt.id)}>
+              {mt.name}
+            </option>
+          ))}
+        </select>
+      </td>
+
+      {/* Entradas */}
+      <td className="px-2 py-1.5">
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          className="input w-24 text-right"
+          value={editData.entries || '0'}
+          onChange={(e) => setEditData((p) => ({ ...p, entries: e.target.value }))}
+        />
+      </td>
+
+      {/* Salidas */}
+      <td className="px-2 py-1.5">
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          className="input w-24 text-right"
+          value={editData.withdrawals || '0'}
+          onChange={(e) => setEditData((p) => ({ ...p, withdrawals: e.target.value }))}
+        />
+      </td>
+
+      {/* Denom toggle */}
+      <td className="px-2 py-1.5 text-center">
         <button
           type="button"
-          onClick={() => navigate(ROUTES.ETV_MODIFICATIONS)}
-          className="text-sm text-primary hover:underline mb-1"
+          onClick={() => setExpandedDenom((v) => !v)}
+          className={`text-xs px-2 py-1 rounded border ${
+            expandedDenom
+              ? 'border-primary text-primary bg-primary/10'
+              : 'border-border text-text-muted hover:border-primary hover:text-primary'
+          }`}
+          title="Desglose de denominaciones"
         >
-          ← Modificaciones
+          {expandedDenom ? '▲' : '▼'}
         </button>
-        <div className="flex flex-wrap justify-between items-start gap-3">
+      </td>
+
+      {/* Acciones (vacío — el confirm está en el panel) */}
+      {canAct && <td className="px-2 py-1.5" />}
+    </tr>
+  );
+
+  // ─── Vista principal ──────────────────────────────────────────────────────────
+
+  return (
+    <div className="w-full">
+      {/* Encabezado */}
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <button
+            type="button"
+            onClick={() => navigate(ROUTES.ETV_MODIFICATIONS)}
+            className="text-sm text-primary hover:underline mb-1"
+          >
+            ← Modificaciones
+          </button>
+          <h1 className="text-xl font-semibold text-text-primary">
+            {header.vault_name ?? `Bóveda #${header.vault_id}`}
+          </h1>
+          <p className="text-sm text-text-muted">
+            Arqueo del{' '}
+            {new Date(header.arqueo_date + 'T12:00:00').toLocaleDateString('es-MX', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+            })}
+          </p>
+        </div>
+
+        {/* Saldos */}
+        <div className="flex gap-4 text-right">
           <div>
-            <h1 className="text-xl font-semibold">
-              Arqueo:{' '}
-              {new Date(header.arqueo_date + 'T12:00:00').toLocaleDateString('es-MX', {
-                year: 'numeric', month: 'long', day: 'numeric',
-              })}
-            </h1>
-            <p className="text-sm text-text-muted">Bóveda #{header.vault_id}</p>
-          </div>
-          <div className="text-right text-sm">
-            <p className="text-text-muted">
-              Apertura: <span className="font-medium">${formatMXN(header.opening_balance)}</span>
+            <p className="text-xs text-text-muted">Saldo apertura</p>
+            <p className="font-semibold text-text-primary">
+              ${formatMXN(header.opening_balance)}
             </p>
-            <p className="text-text-muted">
-              Cierre:{' '}
-              <span
-                className={`font-medium ${
-                  parseFloat(header.closing_balance) < 0 ? 'text-error' : ''
-                }`}
-              >
-                ${formatMXN(header.closing_balance)}
-              </span>
+          </div>
+          <div>
+            <p className="text-xs text-text-muted">Saldo cierre</p>
+            <p
+              className={`font-semibold ${
+                parseFloat(header.closing_balance) < 0 ? 'text-error' : 'text-text-primary'
+              }`}
+            >
+              ${formatMXN(header.closing_balance)}
             </p>
           </div>
         </div>
-
-        {/* Banner de periodo de gracia */}
-        {gracePeriod && (
-          <div
-            className={`mt-3 p-3 rounded-lg border text-sm flex justify-between items-center ${
-              gracePeriod.is_within_grace
-                ? 'bg-success/10 border-success/30 text-success'
-                : 'bg-error/10 border-error text-error'
-            }`}
-          >
-            <span>
-              {gracePeriod.is_within_grace
-                ? `Dentro del periodo de gracia — vence el ${new Date(
-                    gracePeriod.grace_deadline + 'T12:00:00'
-                  ).toLocaleDateString('es-MX')} (${gracePeriod.days_remaining} días)`
-                : 'Fuera del periodo de gracia. No se pueden realizar modificaciones.'}
-            </span>
-          </div>
-        )}
       </div>
 
-      {/* Registros activos */}
-      <div className="card mb-4">
+      {/* Banner de periodo de gracia */}
+      {gracePeriod && (
+        <div
+          className={`mb-4 p-3 rounded-lg border text-sm ${
+            gracePeriod.is_within_grace
+              ? 'bg-success/10 border-success/30 text-success'
+              : 'bg-error/10 border-error text-error'
+          }`}
+        >
+          {gracePeriod.is_within_grace
+            ? `Dentro del periodo de gracia — vence el ${new Date(
+                gracePeriod.grace_deadline + 'T12:00:00'
+              ).toLocaleDateString('es-MX')} (${gracePeriod.days_remaining} días)`
+            : 'Fuera del periodo de gracia. No se pueden realizar modificaciones.'}
+        </div>
+      )}
+
+      {/* Tabla de registros activos */}
+      <div className="card overflow-x-auto mb-4">
         <div className="px-4 py-3 border-b border-border flex justify-between items-center">
           <h2 className="font-medium text-sm">Registros activos</h2>
-          {gracePeriod?.is_within_grace && (
+          {canAct && !action && (
             <button
+              type="button"
               className="btn btn-outline text-xs"
-              onClick={() => {
-                setAction({ type: 'add' });
-                setEditData({
-                  voucher: '', reference: '',
-                  sucursal_id: '0', movement_type_id: '0',
-                  entries: '0', withdrawals: '0',
-                  record_date: header.arqueo_date,
-                  ...DENOMINATIONS.reduce((a, d) => ({ ...a, [d.key]: '0' }), {}),
-                });
-                setReasonId(0);
-                setReasonDetail('');
-                setActionError('');
-              }}
+              onClick={() => openAction('add')}
             >
               + Agregar registro
             </button>
           )}
         </div>
+
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-text-muted border-b border-border bg-surface/40">
-              <th className="px-4 py-2">UID</th>
-              <th className="px-4 py-2">Comprobante</th>
-              <th className="px-4 py-2">Referencia</th>
-              <th className="px-4 py-2">Entradas</th>
-              <th className="px-4 py-2">Salidas</th>
-              {gracePeriod?.is_within_grace && <th className="px-4 py-2" />}
+            <tr className="text-left text-text-muted border-b border-border">
+              <th className="px-2 py-2 w-6">#</th>
+              <th className="px-2 py-2">Comprobante</th>
+              <th className="px-2 py-2">Referencia</th>
+              <th className="px-2 py-2">Nombre Sucursal</th>
+              <th className="px-2 py-2">Tipo Movimiento</th>
+              <th className="px-2 py-2">Entradas</th>
+              <th className="px-2 py-2">Salidas</th>
+              <th className="px-2 py-2 w-16">Denom.</th>
+              {canAct && <th className="px-2 py-2 w-28" />}
             </tr>
           </thead>
           <tbody>
-            {activeRecords.map((r) => (
-              <tr key={r.id} className="border-b border-border/40">
-                <td className="px-4 py-2 font-mono text-xs text-text-muted">{r.record_uid}</td>
-                <td className="px-4 py-2">{r.voucher}</td>
-                <td className="px-4 py-2 text-text-muted">{r.reference}</td>
-                <td className="px-4 py-2 text-success">
-                  {parseFloat(r.entries) > 0 ? `$${formatMXN(r.entries)}` : '—'}
-                </td>
-                <td className="px-4 py-2 text-error">
-                  {parseFloat(r.withdrawals) > 0 ? `$${formatMXN(r.withdrawals)}` : '—'}
-                </td>
-                {gracePeriod?.is_within_grace && (
-                  <td className="px-4 py-2">
-                    <div className="flex gap-2">
-                      <button
-                        className="text-xs text-primary hover:underline"
-                        onClick={() => openEdit(r)}
-                      >
-                        Editar
-                      </button>
-                      <button
-                        className="text-xs text-error hover:underline"
-                        onClick={() => {
-                          setAction({ type: 'cancel', record: r });
-                          setReasonId(0);
-                          setReasonDetail('');
-                          setActionError('');
-                        }}
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  </td>
-                )}
-              </tr>
-            ))}
-            {activeRecords.length === 0 && (
+            {activeRecords.map((r, idx) => {
+              const isActiveRow = action?.record?.id === r.id;
+              const isEditRow = isActiveRow && action?.type === 'edit';
+              const isCancelRow = isActiveRow && action?.type === 'cancel';
+
+              return (
+                <React.Fragment key={r.id}>
+                  {/* Fila en modo edición */}
+                  {isEditRow ? (
+                    renderEditRow(idx + 1)
+                  ) : (
+                    /* Fila en modo lectura (o modo cancelación) */
+                    <tr
+                      className={`border-b border-border/50 ${
+                        isCancelRow
+                          ? 'bg-error/5'
+                          : idx % 2 === 0
+                          ? 'bg-white'
+                          : 'bg-surface/40'
+                      }`}
+                    >
+                      <td className="px-2 py-1.5 text-text-muted">{idx + 1}</td>
+                      <td className="px-2 py-1.5">{r.voucher}</td>
+                      <td className="px-2 py-1.5 text-text-muted">{r.reference}</td>
+                      <td className="px-2 py-1.5 text-text-muted">
+                        {sucursalName(r.sucursal_id)}
+                      </td>
+                      <td className="px-2 py-1.5 text-text-muted">{movTypeName(r.movement_type_id)}</td>
+                      <td className="px-2 py-1.5 text-success">
+                        {parseFloat(r.entries) > 0 ? `$${formatMXN(r.entries)}` : '—'}
+                      </td>
+                      <td className="px-2 py-1.5 text-error">
+                        {parseFloat(r.withdrawals) > 0 ? `$${formatMXN(r.withdrawals)}` : '—'}
+                      </td>
+                      {/* Denom (solo lectura, sin toggle funcional en read mode) */}
+                      <td className="px-2 py-1.5 text-center">
+                        <span className="text-xs text-text-muted/50">—</span>
+                      </td>
+                      {canAct && (
+                        <td className="px-2 py-1.5">
+                          {!action ? (
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                className="text-xs text-primary hover:underline"
+                                onClick={() => openAction('edit', r)}
+                              >
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                className="text-xs text-error hover:underline"
+                                onClick={() => openAction('cancel', r)}
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          ) : null}
+                        </td>
+                      )}
+                    </tr>
+                  )}
+
+                  {/* Panel de acción debajo de esta fila */}
+                  {isActiveRow && renderActionPanel(action!.type)}
+                </React.Fragment>
+              );
+            })}
+
+            {/* Fila nueva (add) al final de la tabla */}
+            {action?.type === 'add' && (
+              <React.Fragment>
+                {renderEditRow('+')}
+                {renderActionPanel('add')}
+              </React.Fragment>
+            )}
+
+            {activeRecords.length === 0 && !action && (
               <tr>
-                <td colSpan={6} className="px-4 py-4 text-center text-text-muted text-xs">
+                <td colSpan={colCount} className="px-4 py-4 text-center text-text-muted text-xs">
                   Sin registros activos
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+
+        {/* Totales */}
+        <div className="px-4 py-3 border-t border-border flex gap-6 text-sm text-text-muted">
+          <span>
+            Total entradas:{' '}
+            <span className="font-semibold text-success">
+              ${formatMXN(
+                activeRecords.reduce((s, r) => s + (parseFloat(r.entries) || 0), 0)
+              )}
+            </span>
+          </span>
+          <span>
+            Total salidas:{' '}
+            <span className="font-semibold text-error">
+              ${formatMXN(
+                activeRecords.reduce((s, r) => s + (parseFloat(r.withdrawals) || 0), 0)
+              )}
+            </span>
+          </span>
+        </div>
       </div>
 
-      {/* Contrapartidas */}
+      {/* Contrapartidas (histórico) */}
       {counterpartRecords.length > 0 && (
-        <div className="card mb-4">
+        <div className="card overflow-x-auto">
           <div className="px-4 py-3 border-b border-border">
             <h2 className="font-medium text-sm text-text-muted">
               Registros de contrapartida (histórico)
@@ -330,9 +676,11 @@ export default function ModificationForm() {
                 <tr key={r.id} className="border-b border-border/40 opacity-70">
                   <td className="px-4 py-2 font-mono text-xs">{r.record_uid}</td>
                   <td className="px-4 py-2">
-                    <span className={`badge text-xs ${
-                      r.counterpart_type === 'cancellation' ? 'badge-error' : 'badge-warning'
-                    }`}>
+                    <span
+                      className={`badge text-xs ${
+                        r.counterpart_type === 'cancellation' ? 'badge-error' : 'badge-warning'
+                      }`}
+                    >
                       {r.counterpart_type === 'cancellation' ? 'CANCELACIÓN' : 'MODIFICACIÓN'}
                     </span>
                   </td>
@@ -349,151 +697,6 @@ export default function ModificationForm() {
               ))}
             </tbody>
           </table>
-        </div>
-      )}
-
-      {/* Panel de acción */}
-      {action.type && (
-        <div className="card p-5 border-t-4 border-primary">
-          <h3 className="font-semibold text-sm mb-4">
-            {action.type === 'cancel' && `Cancelar registro: ${action.record?.record_uid}`}
-            {action.type === 'edit' && `Editar registro: ${action.record?.record_uid}`}
-            {action.type === 'add' && 'Agregar nuevo registro'}
-          </h3>
-
-          {/* Campos del registro (edit y add) */}
-          {(action.type === 'edit' || action.type === 'add') && (
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <div>
-                <label className="label text-xs">Comprobante</label>
-                <input
-                  type="text"
-                  className="input"
-                  value={editData.voucher || ''}
-                  onChange={(e) => setEditData((p) => ({ ...p, voucher: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="label text-xs">Referencia</label>
-                <input
-                  type="text"
-                  className="input"
-                  value={editData.reference || ''}
-                  onChange={(e) => setEditData((p) => ({ ...p, reference: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="label text-xs">Entradas</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  className="input text-right"
-                  value={editData.entries || '0'}
-                  onChange={(e) => setEditData((p) => ({ ...p, entries: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="label text-xs">Salidas</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  className="input text-right"
-                  value={editData.withdrawals || '0'}
-                  onChange={(e) => setEditData((p) => ({ ...p, withdrawals: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="label text-xs">Fecha</label>
-                <input
-                  type="date"
-                  className="input"
-                  value={editData.record_date || ''}
-                  onChange={(e) => setEditData((p) => ({ ...p, record_date: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="label text-xs">Tipo de movimiento</label>
-                <select
-                  className="input"
-                  value={editData.movement_type_id || '0'}
-                  onChange={(e) => setEditData((p) => ({ ...p, movement_type_id: e.target.value }))}
-                >
-                  <option value="0">— Seleccionar —</option>
-                  {movementTypes.map((mt) => (
-                    <option key={mt.id} value={String(mt.id)}>
-                      {mt.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          )}
-
-          {/* Motivo */}
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            <div>
-              <label className="label text-xs">Motivo de modificación *</label>
-              <select
-                className="input"
-                value={reasonId}
-                onChange={(e) => setReasonId(parseInt(e.target.value))}
-              >
-                <option value={0}>— Seleccionar motivo —</option>
-                {reasons.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label text-xs">Detalle adicional (opcional)</label>
-              <input
-                type="text"
-                className="input"
-                placeholder="Descripción libre"
-                value={reasonDetail}
-                onChange={(e) => setReasonDetail(e.target.value)}
-                maxLength={500}
-              />
-            </div>
-          </div>
-
-          {actionError && (
-            <p className="text-error text-xs mb-3">{actionError}</p>
-          )}
-
-          <div className="flex gap-3">
-            <button
-              type="button"
-              className="btn btn-ghost text-sm"
-              onClick={() => setAction({ type: null })}
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              disabled={processing || !reasonId}
-              onClick={
-                action.type === 'cancel'
-                  ? handleCancel
-                  : action.type === 'edit'
-                  ? handleEdit
-                  : handleAdd
-              }
-              className="btn btn-primary text-sm"
-            >
-              {processing
-                ? 'Procesando...'
-                : action.type === 'cancel'
-                ? 'Confirmar cancelación'
-                : action.type === 'edit'
-                ? 'Confirmar edición'
-                : 'Agregar registro'}
-            </button>
-          </div>
         </div>
       )}
     </div>

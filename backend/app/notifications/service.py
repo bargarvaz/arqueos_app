@@ -141,20 +141,46 @@ async def notify_weekend_upload(
     )
 
 
+async def notify_excess_certificates(
+    db: AsyncSession,
+    header_id: int,
+    vault_id: int,
+    attempted_by: int,
+) -> None:
+    """Notifica a admin/operations cuando una ETV intenta subir más de 10 PDFs."""
+    from app.vaults.models import Vault
+    vault = await db.get(Vault, vault_id)
+    code = vault.vault_code if vault else f"#{vault_id}"
+    await notify_operations_and_admin(
+        db,
+        notification_type=NotificationType.excess_certificates,
+        title=f"Exceso de certificados — {code}",
+        message=(
+            f"La bóveda {code} ya alcanzó el límite de 10 certificados PDF. "
+            "Se rechazó un intento adicional de subida."
+        ),
+        entity_type="arqueo_header",
+        entity_id=header_id,
+        sender_id=attempted_by,
+    )
+
+
 async def notify_vault_reactivated(
     db: AsyncSession,
-    vault_code: str,
     vault_id: int,
-    reactivated_by: int,
 ) -> None:
+    """Resuelve internamente el código de bóveda. sender_id queda None (sistema)."""
+    from app.vaults.models import Vault
+    vault = await db.get(Vault, vault_id)
+    code = vault.vault_code if vault else f"#{vault_id}"
     await notify_operations_and_admin(
         db,
         notification_type=NotificationType.vault_reactivated,
-        title=f"Bóveda reactivada — {vault_code}",
-        message=f"La bóveda {vault_code} fue reactivada por el administrador.",
+        title=f"Bóveda reactivada — {code}",
+        message=f"La bóveda {code} fue reactivada por el administrador.",
         entity_type="vault",
         entity_id=vault_id,
-        sender_id=reactivated_by,
+        sender_id=None,
     )
 
 

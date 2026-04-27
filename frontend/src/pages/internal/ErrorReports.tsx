@@ -58,7 +58,7 @@ export default function ErrorReports() {
       const data = await errorReportService.list({
         status: statusFilter || undefined,
         page,
-        page_size: 20,
+        page_size: 25,
       });
       setReports(data.items);
       setTotal(data.total);

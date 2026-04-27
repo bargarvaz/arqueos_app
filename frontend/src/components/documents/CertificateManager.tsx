@@ -64,10 +64,17 @@ export default function CertificateManager({ headerId, readOnly = false }: Props
 
   const handleDownload = async (cert: Certificate) => {
     try {
-      const url = await documentService.getDownloadUrl(cert.id);
-      window.open(url, '_blank');
+      await documentService.downloadCertificate(cert.id, cert.file_name, 'download');
     } catch {
-      setError('Error al generar el enlace de descarga.');
+      setError('Error al descargar el certificado.');
+    }
+  };
+
+  const handleView = async (cert: Certificate) => {
+    try {
+      await documentService.downloadCertificate(cert.id, cert.file_name, 'view');
+    } catch {
+      setError('Error al abrir el certificado.');
     }
   };
 
@@ -148,7 +155,13 @@ export default function CertificateManager({ headerId, readOnly = false }: Props
                   </p>
                 </div>
               </div>
-              <div className="flex gap-2 shrink-0 ml-3">
+              <div className="flex gap-3 shrink-0 ml-3">
+                <button
+                  className="text-xs text-primary hover:underline"
+                  onClick={() => handleView(cert)}
+                >
+                  Ver
+                </button>
                 <button
                   className="text-xs text-primary hover:underline"
                   onClick={() => handleDownload(cert)}

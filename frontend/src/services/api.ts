@@ -4,20 +4,49 @@ import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? '/api/v1';
 
+// ─── Storage por pestaña (sessionStorage) ────────────────────────────────────
+// Usamos sessionStorage para que cada pestaña tenga su propia sesión, lo que
+// permite estar logueado como admin en una pestaña y ETV en otra al mismo tiempo.
+
+export const ACCESS_TOKEN_KEY = 'access_token';
+export const SESSION_ID_KEY = 'session_id';
+
+export function getAccessToken(): string | null {
+  return sessionStorage.getItem(ACCESS_TOKEN_KEY);
+}
+
+export function getSessionId(): string | null {
+  return sessionStorage.getItem(SESSION_ID_KEY);
+}
+
+export function setAuthSession(access_token: string, session_id: string): void {
+  sessionStorage.setItem(ACCESS_TOKEN_KEY, access_token);
+  sessionStorage.setItem(SESSION_ID_KEY, session_id);
+}
+
+export function clearAuthSession(): void {
+  sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+  sessionStorage.removeItem(SESSION_ID_KEY);
+}
+
 export const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true, // Para enviar/recibir cookies (refresh token)
+  withCredentials: true, // Necesario para enviar/recibir cookie HttpOnly de refresh
 });
 
-// ─── Interceptor de request: agrega el access token ─────────────────────────
+// ─── Interceptor de request: agrega el access token + X-Session-Id ──────────
 
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const token = localStorage.getItem('access_token');
+  const token = getAccessToken();
+  const sessionId = getSessionId();
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  if (sessionId && config.headers) {
+    config.headers['X-Session-Id'] = sessionId;
   }
   return config;
 });
@@ -44,6 +73,13 @@ api.interceptors.response.use(
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
     if (error.response?.status === 401 && !originalRequest._retry) {
+      // Si el endpoint es /auth/refresh, no reintentar (rompemos el loop).
+      const url = originalRequest.url ?? '';
+      if (url.includes('/auth/refresh')) {
+        clearAuthSession();
+        return Promise.reject(error);
+      }
+
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
@@ -59,17 +95,22 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const { data } = await api.post<{ access_token: string }>('/auth/refresh');
-        const newToken = data.access_token;
-        localStorage.setItem('access_token', newToken);
-        processQueue(null, newToken);
+        // Sin session_id no tiene sentido intentar refresh.
+        if (!getSessionId()) {
+          throw error;
+        }
+        const { data } = await api.post<{ access_token: string; session_id: string }>(
+          '/auth/refresh',
+        );
+        setAuthSession(data.access_token, data.session_id);
+        processQueue(null, data.access_token);
         if (originalRequest.headers) {
-          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+          originalRequest.headers.Authorization = `Bearer ${data.access_token}`;
         }
         return api(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError, null);
-        localStorage.removeItem('access_token');
+        clearAuthSession();
         // Redirigir al login según el path actual
         const path = window.location.pathname;
         const loginPath = path.startsWith('/etv') ? '/external/login' : '/internal/login';

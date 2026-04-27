@@ -3,17 +3,20 @@
 
 import secrets
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete, or_
 
 from app.users.models import User, UserType
 from app.auth import otp_store
 from app.auth.email_service import send_otp_email
+from app.auth.session_model import AuthSession
 from app.auth.utils import (
     verify_password,
     hash_password,
+    hash_refresh_token,
     create_access_token,
     create_refresh_token,
     decode_refresh_token,
@@ -30,6 +33,109 @@ from app.common.exceptions import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# ─── Sesiones server-side ────────────────────────────────────────────────────
+
+async def _sweep_expired_sessions(db: AsyncSession) -> None:
+    """Borra filas de sesiones ya expiradas o revocadas. Idempotente."""
+    now = datetime.now(timezone.utc)
+    await db.execute(
+        delete(AuthSession).where(
+            or_(
+                AuthSession.expires_at < now,
+                AuthSession.revoked_at.is_not(None),
+            )
+        )
+    )
+
+
+async def _create_session(
+    db: AsyncSession,
+    user_id: int,
+    ip_address: str | None,
+    user_agent: str | None,
+) -> tuple[str, str]:
+    """
+    Crea una nueva fila en auth_sessions y retorna (session_id, refresh_token).
+
+    Limpia sesiones expiradas/revocadas antes de insertar para evitar acumulación.
+    El refresh token JWT incluye el session_id como claim `sid`. La fila guarda
+    el hash SHA-256 del JWT para detectar reuso si fuera robado.
+    """
+    from app.config import settings as cfg
+
+    await _sweep_expired_sessions(db)
+
+    session_id = uuid4()
+    refresh_token = create_refresh_token(user_id, session_id=str(session_id))
+    expires_at = datetime.now(timezone.utc) + timedelta(
+        hours=cfg.jwt_refresh_expire_hours
+    )
+
+    session = AuthSession(
+        session_id=session_id,
+        user_id=user_id,
+        refresh_hash=hash_refresh_token(refresh_token),
+        ip_address=ip_address,
+        user_agent=user_agent[:500] if user_agent else None,
+        expires_at=expires_at,
+    )
+    db.add(session)
+    await db.flush()
+    return str(session_id), refresh_token
+
+
+async def revoke_session(db: AsyncSession, session_id: str) -> None:
+    """Marca una sesión como revocada. Idempotente: si no existe, no hace nada."""
+    try:
+        sid = UUID(session_id)
+    except (ValueError, TypeError):
+        return
+    session = await db.get(AuthSession, sid)
+    if session and session.revoked_at is None:
+        session.revoked_at = datetime.now(timezone.utc)
+        await db.commit()
+
+
+async def list_user_sessions(
+    db: AsyncSession,
+    user_id: int,
+) -> list[AuthSession]:
+    """Lista las sesiones activas (no revocadas y no expiradas) del usuario."""
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        select(AuthSession)
+        .where(
+            AuthSession.user_id == user_id,
+            AuthSession.revoked_at.is_(None),
+            AuthSession.expires_at > now,
+        )
+        .order_by(AuthSession.last_used_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def revoke_user_session(
+    db: AsyncSession,
+    user_id: int,
+    session_id: str,
+) -> bool:
+    """
+    Revoca una sesión si pertenece al usuario indicado.
+    Retorna True si se revocó, False si no existe o no pertenece al usuario.
+    """
+    try:
+        sid = UUID(session_id)
+    except (ValueError, TypeError):
+        return False
+    session = await db.get(AuthSession, sid)
+    if not session or session.user_id != user_id:
+        return False
+    if session.revoked_at is None:
+        session.revoked_at = datetime.now(timezone.utc)
+        await db.commit()
+    return True
 
 
 async def login_internal(
@@ -60,14 +166,17 @@ async def login_internal(
         ip_address=ip_address,
         user_agent=user_agent,
     )
-    await db.commit()
 
+    session_id, refresh_token = await _create_session(
+        db, user.id, ip_address, user_agent
+    )
     access_token = create_access_token(user.id)
-    refresh_token = create_refresh_token(user.id)
+    await db.commit()
 
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
+        "session_id": session_id,
         "must_change_password": user.must_change_password,
     }
 
@@ -102,11 +211,16 @@ async def login_external_step1(
             ip_address=ip_address,
             user_agent=user_agent,
         )
+        session_id, refresh_token = await _create_session(
+            db, user.id, ip_address, user_agent
+        )
+        access_token = create_access_token(user.id)
         await db.commit()
         return {
             "mfa_bypassed": True,
-            "access_token": create_access_token(user.id),
-            "refresh_token": create_refresh_token(user.id),
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "session_id": session_id,
             "must_change_password": user.must_change_password,
         }
 
@@ -168,15 +282,17 @@ async def login_external_step2(
         ip_address=ip_address,
         user_agent=user_agent,
     )
-    await db.commit()
 
-    from app.config import settings as cfg
+    session_id, refresh_token = await _create_session(
+        db, user.id, ip_address, user_agent
+    )
     access_token = create_access_token(user.id)
-    refresh_token = create_refresh_token(user.id)
+    await db.commit()
 
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
+        "session_id": session_id,
         "must_change_password": user.must_change_password,
     }
 
@@ -207,17 +323,56 @@ async def resend_otp(
     return {"message": "Código reenviado a tu correo."}
 
 
-async def refresh_tokens(refresh_token: str) -> dict:
-    """Renueva el access token usando el refresh token."""
+async def refresh_tokens(
+    db: AsyncSession,
+    refresh_token: str,
+    session_id: str | None,
+) -> dict:
+    """
+    Renueva el access token validando contra la sesión server-side.
+
+    Reglas:
+    - El JWT debe ser válido y de tipo refresh.
+    - El claim `sid` del JWT debe coincidir con `session_id` enviado por el cliente.
+    - La fila auth_sessions debe existir, no estar revocada, no estar expirada,
+      y su refresh_hash debe coincidir con el hash del token presentado
+      (detección de reuso si fue robado).
+    - Si todo OK, rotamos el refresh_hash (nuevo token) y actualizamos last_used_at.
+    """
     payload = decode_refresh_token(refresh_token)
     if not payload:
         raise UnauthorizedError("Refresh token inválido o expirado.")
 
-    user_id = payload.get("sub")
-    access_token = create_access_token(user_id)
-    new_refresh = create_refresh_token(user_id)
+    token_sid = payload.get("sid")
+    if not session_id or not token_sid or token_sid != session_id:
+        raise UnauthorizedError("Sesión no coincide con el token.")
 
-    return {"access_token": access_token, "refresh_token": new_refresh}
+    try:
+        sid = UUID(session_id)
+    except (ValueError, TypeError):
+        raise UnauthorizedError("Identificador de sesión inválido.")
+
+    session = await db.get(AuthSession, sid)
+    now = datetime.now(timezone.utc)
+    if (
+        not session
+        or session.revoked_at is not None
+        or session.expires_at < now
+        or session.refresh_hash != hash_refresh_token(refresh_token)
+    ):
+        raise UnauthorizedError("Sesión inválida o expirada.")
+
+    user_id = int(payload["sub"])
+    new_refresh = create_refresh_token(user_id, session_id=session_id)
+    session.refresh_hash = hash_refresh_token(new_refresh)
+    session.last_used_at = now
+    await db.commit()
+
+    return {
+        "access_token": create_access_token(user_id),
+        "refresh_token": new_refresh,
+        "session_id": session_id,
+    }
 
 
 async def change_password(

@@ -17,6 +17,7 @@ export interface Vault {
   manager_id: number | null;
   treasurer_id: number | null;
   initial_balance: string;
+  current_balance: string | null;
   is_active: boolean;
   deactivated_at: string | null;
   reactivated_at: string | null;
@@ -52,7 +53,7 @@ const vaultService = {
     vault_code: string;
     vault_name: string;
     company_id: number;
-    branch_id: number;
+    empresa_id?: number | null;
     manager_id?: number | null;
     treasurer_id?: number | null;
     initial_balance: string;
@@ -63,7 +64,7 @@ const vaultService = {
 
   updateVault: async (id: number, body: Partial<{
     vault_name: string;
-    branch_id: number;
+    empresa_id: number | null;
     manager_id: number | null;
     treasurer_id: number | null;
   }>): Promise<Vault> => {

@@ -47,6 +47,7 @@ export interface UpdateUserPayload {
   puesto?: string | null;
   is_active?: boolean;
   company_id?: number | null;
+  empresa_id?: number | null;
 }
 
 export interface PagedUsers {

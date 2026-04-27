@@ -13,6 +13,7 @@ export const ROUTES = {
   ETV_MODIFICATIONS: '/etv/modifications',
   ETV_NOTIFICATIONS: '/etv/notifications',
   ETV_ERROR_REPORTS: '/etv/error-reports',
+  ETV_EXPLORER: '/etv/explorer',
 
   // Internal
   DASHBOARD: '/internal/dashboard',
@@ -27,6 +28,9 @@ export const ROUTES = {
   USER_MANAGEMENT: '/admin/users',
   CATALOG_MANAGER: '/admin/catalogs',
   AUDIT_LOG: '/admin/audit',
+
+  // Perfil del usuario
+  MY_SESSIONS: '/perfil/sesiones',
 } as const;
 
 // Denominaciones de billetes y monedas (en orden descendente)

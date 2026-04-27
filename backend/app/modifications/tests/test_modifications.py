@@ -17,7 +17,7 @@ def _make_record(entries: str = "0", withdrawals: str = "0") -> ArqueoRecord:
     rec.record_uid = "ABC123"
     rec.voucher = "VCH-001"
     rec.reference = "REF-001"
-    rec.branch_id = 1
+    rec.sucursal_id = 1
     rec.movement_type_id = 1
     rec.record_date = date(2026, 1, 15)
     # Denominaciones en 0
@@ -48,7 +48,7 @@ class TestNegateRecord:
         negated = _negate_record(rec)
         assert negated["voucher"] == "VCH-001"
         assert negated["reference"] == "REF-001"
-        assert negated["branch_id"] == 1
+        assert negated["sucursal_id"] == 1
         assert negated["movement_type_id"] == 1
 
     def test_denominations_copied(self):

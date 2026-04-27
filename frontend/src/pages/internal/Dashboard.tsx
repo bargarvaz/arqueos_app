@@ -9,6 +9,7 @@ import reportService, {
   WeeklyTrendPoint,
   DenominationPoint,
 } from '@/services/reportService';
+import { POLLING_INTERVAL_MS } from '@/utils/constants';
 
 const formatMXN = (v: string | number) =>
   parseFloat(String(v)).toLocaleString('es-MX', { minimumFractionDigits: 2 });
@@ -53,8 +54,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const load = () => {
-    setLoading(true);
+  const load = (silent = false) => {
+    if (!silent) setLoading(true);
     Promise.all([
       reportService.getSummary(),
       reportService.getMissingVaults(),
@@ -66,12 +67,21 @@ export default function Dashboard() {
         setMissing(m);
         setTrend(t);
         setDenomDist(d);
+        setError('');
       })
       .catch(() => setError('Error al cargar el dashboard.'))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!silent) setLoading(false);
+      });
   };
 
-  useEffect(load, []);
+  useEffect(() => {
+    load();
+    // Refresco silencioso cada 30 minutos para mantener métricas actualizadas
+    const interval = setInterval(() => load(true), POLLING_INTERVAL_MS);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (loading) {
     return (
@@ -116,7 +126,7 @@ export default function Dashboard() {
             })}
           </p>
         </div>
-        <button onClick={load} className="btn btn-outline text-sm">
+        <button onClick={() => load()} className="btn btn-outline text-sm">
           Actualizar
         </button>
       </div>

@@ -12,6 +12,8 @@ import arqueoService, {
 import { useDraft } from '@/hooks/useDraft';
 import { DENOMINATIONS, ROUTES, ARQUEO_STATUS } from '@/utils/constants';
 import catalogService, { MovementType, Sucursal } from '@/services/catalogService';
+import CertificateManager from '@/components/documents/CertificateManager';
+import PreviousArqueosFeed from '@/components/arqueo/PreviousArqueosFeed';
 
 // ─── Esquema de validación Zod ────────────────────────────────────────────────
 
@@ -142,7 +144,7 @@ export default function ArqueoForm() {
 
   // ─── Draft ──────────────────────────────────────────────────────────────────
 
-  const { saveDraft, clearDraft, hasDraft } = useDraft<RecordValues[]>({
+  const { clearDraft, hasDraft, lastSavedAt } = useDraft<RecordValues[]>({
     key: draftKey,
     data: records as RecordValues[],
     onRestore: (saved) => {
@@ -277,7 +279,15 @@ export default function ArqueoForm() {
 
   const isPublished = header?.status === ARQUEO_STATUS.PUBLISHED;
   const isLocked = header?.status === ARQUEO_STATUS.LOCKED;
-  const readOnly = isLocked;
+  const isDraft = header?.status === ARQUEO_STATUS.DRAFT;
+
+  // Cualquier arqueo de un día anterior es de solo lectura,
+  // independientemente del estado. Cambios = módulo de Modificaciones.
+  const todayCdmx = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  const isPastDay = !!state && state.arqueo_date < todayCdmx;
+  const draftExpired = isDraft && isPastDay;
+
+  const readOnly = isLocked || isPastDay;
 
   if (loading) {
     return (
@@ -355,7 +365,19 @@ export default function ArqueoForm() {
         </div>
       )}
 
-      {isPublished && !isLocked && (
+      {header?.auto_published && (
+        <div className="mb-4 p-3 bg-warning/10 border border-warning rounded-lg text-sm">
+          Este arqueo fue <span className="font-medium">publicado automáticamente en blanco</span> por no haber sido llenado en la fecha correspondiente. Para agregar o corregir movimientos usa el módulo de <span className="font-medium">Modificaciones</span>.
+        </div>
+      )}
+
+      {draftExpired && !header?.auto_published && (
+        <div className="mb-4 p-3 bg-warning/10 border border-warning rounded-lg text-sm">
+          Este arqueo <span className="font-medium">no fue publicado</span> el día correspondiente. El borrador ha expirado. Para registrar movimientos usa el módulo de <span className="font-medium">Modificaciones</span>.
+        </div>
+      )}
+
+      {isPublished && !isLocked && !isPastDay && !header?.auto_published && (
         <div className="mb-4 p-3 bg-success/10 border border-success rounded-lg text-sm">
           Arqueo publicado. Puedes corregirlo y volver a publicarlo durante el día de hoy.
         </div>
@@ -637,13 +659,11 @@ export default function ArqueoForm() {
         {/* Acciones */}
         {!readOnly && (
           <div className="mt-4 flex justify-between items-center flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={saveDraft}
-              className="btn btn-outline text-sm"
-            >
-              Guardar borrador
-            </button>
+            <span className="text-xs text-text-muted">
+              {lastSavedAt
+                ? `Borrador guardado automáticamente · ${lastSavedAt.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+                : 'El borrador se guarda automáticamente al escribir.'}
+            </span>
 
             <button
               type="submit"
@@ -655,6 +675,28 @@ export default function ArqueoForm() {
           </div>
         )}
       </form>
+
+      {/* Certificados / papeletas — solo después de tener un header creado */}
+      {header?.id && (
+        <div className="mt-6 card p-4">
+          <h2 className="text-base font-semibold text-text-primary mb-1">
+            Papeletas / certificados PDF
+          </h2>
+          <p className="text-xs text-text-muted mb-3">
+            Adjunta los certificados firmados de este arqueo. Solo PDF, máx 10 MB
+            por archivo, hasta 10 archivos por día.
+          </p>
+          <CertificateManager headerId={header.id} readOnly={isLocked} />
+        </div>
+      )}
+
+      {/* Días anteriores con lazy loading (solo lectura) */}
+      {state?.vault.id && state?.arqueo_date && (
+        <PreviousArqueosFeed
+          vaultId={state.vault.id}
+          currentDate={state.arqueo_date}
+        />
+      )}
     </div>
   );
 }

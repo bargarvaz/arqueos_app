@@ -264,6 +264,8 @@ async def update_user(
         puesto=body.puesto,
         is_active=body.is_active,
         company_id=body.company_id,
+        empresa_id=body.empresa_id,
+        fields_set=body.model_fields_set,
         ip_address=ip,
         user_agent=ua,
     )

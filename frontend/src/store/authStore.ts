@@ -1,7 +1,8 @@
 // Store de autenticación con Zustand
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import type { MeResponse } from '@/services/authService';
+import { clearAuthSession } from '@/services/api';
 
 interface AuthState {
   user: MeResponse | null;
@@ -23,7 +24,7 @@ export const useAuthStore = create<AuthState>()(
       setUser: (user) => set({ user, isAuthenticated: true, isLoading: false }),
 
       clearAuth: () => {
-        localStorage.removeItem('access_token');
+        clearAuthSession();
         set({ user: null, isAuthenticated: false, isLoading: false });
       },
 
@@ -31,6 +32,8 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'auth-storage',
+      // sessionStorage: cada pestaña tiene su propio usuario logueado.
+      storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
         user: state.user,
         isAuthenticated: state.isAuthenticated,

@@ -18,19 +18,28 @@ logger = logging.getLogger(__name__)
 
 async def run_missing_arqueo_check(target_date: date | None = None) -> None:
     """
-    Detecta bóvedas activas sin arqueo publicado en target_date y
-    genera notificaciones missing_arqueo para Operations y Admin.
+    1. Auto-publica en blanco todos los drafts de días anteriores.
+    2. Detecta bóvedas activas sin arqueo publicado en target_date y
+       genera notificaciones missing_arqueo para Operations y Admin.
     """
     from app.database import AsyncSessionLocal
     from app.dashboard.service import get_missing_vaults
     from app.notifications.service import notify_missing_arqueo
-    from app.arqueos.service import _check_holiday
+    from app.arqueos.service import auto_publish_expired_drafts
 
     if target_date is None:
         target_date = date.today()
 
     async with AsyncSessionLocal() as db:
         try:
+            # Paso 1: auto-publicar drafts expirados
+            auto_ids = await auto_publish_expired_drafts(db, target_date)
+            if auto_ids:
+                logger.info(
+                    "Job missing_arqueo: %d drafts auto-publicados en blanco.", len(auto_ids)
+                )
+
+            # Paso 2: notificar bóvedas aún sin arqueo publicado
             missing = await get_missing_vaults(db, target_date=target_date)
             logger.info(
                 "Job missing_arqueo: %d bóvedas sin arqueo al %s",

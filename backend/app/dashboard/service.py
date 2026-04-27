@@ -160,8 +160,14 @@ async def get_denomination_distribution(
     company_id: int | None = None,
 ) -> list[dict]:
     """
-    Suma de cada denominación para los arqueos del día.
-    Retorna lista ordenada de {denomination, total} para gráfica de barras.
+    Composición de la bóveda por denominación al cierre de target_date.
+
+    Para cada denominación, suma las entradas y resta las salidas de TODOS los
+    registros publicados (no draft) hasta target_date (inclusive). Esto refleja
+    el dinero que hay físicamente EN las bóvedas activas, no el flujo del día.
+
+    El check_constraint del modelo garantiza que entries y withdrawals son
+    mutuamente excluyentes, por lo que `entries > 0` distingue entradas de salidas.
     """
     if target_date is None:
         target_date = date.today()
@@ -185,18 +191,20 @@ async def get_denomination_distribution(
         ("coin_010", "$0.10"),
     ]
 
-    # Query individual por denominación (alternativa: un solo SELECT con múltiples SUM)
     distribution = []
     for field_name, label in denomination_fields:
         col = getattr(ArqueoRecord, field_name)
+        # Entrada = +col, Salida = -col
+        net = case((ArqueoRecord.entries > 0, col), else_=-col)
         q = (
-            select(func.coalesce(func.sum(col), 0))
+            select(func.coalesce(func.sum(net), 0))
             .join(ArqueoHeader, ArqueoHeader.id == ArqueoRecord.arqueo_header_id)
             .join(Vault, Vault.id == ArqueoHeader.vault_id)
             .where(
-                ArqueoHeader.arqueo_date == target_date,
+                ArqueoHeader.arqueo_date <= target_date,
                 ArqueoHeader.status != ArqueoStatus.draft,
                 ArqueoRecord.is_active == True,
+                ArqueoRecord.is_counterpart == False,
                 Vault.is_active == True,
             )
         )
@@ -204,6 +212,10 @@ async def get_denomination_distribution(
             q = q.where(Vault.company_id == company_id)
 
         total = (await db.execute(q)).scalar_one()
+        # No mostrar denominaciones negativas en la gráfica (puede pasar en datos
+        # de prueba con salidas sin entradas previas registradas en denominaciones).
+        if total < 0:
+            total = 0
         distribution.append({"denomination": label, "total": str(total)})
 
     return distribution

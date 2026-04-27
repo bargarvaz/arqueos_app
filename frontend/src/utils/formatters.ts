@@ -48,6 +48,12 @@ export function formatNumber(value: number | string | null | undefined): string 
 export function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '—';
   try {
+    // YYYY-MM-DD: parsear directamente para evitar que new Date() lo trate como UTC
+    // y lo desplace un día atrás en zonas UTC-N.
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      const [y, m, d] = dateStr.split('-');
+      return `${d}/${m}/${y}`;
+    }
     return DATE_FORMATTER.format(new Date(dateStr));
   } catch {
     return dateStr;

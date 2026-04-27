@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import authService from '@/services/authService';
+import { getAccessToken } from '@/services/api';
 import { SESSION_INACTIVITY_MS, ROUTES } from '@/utils/constants';
 
 export function useAuth() {
@@ -35,7 +36,7 @@ export function useAuth() {
   // ─── Funciones de auth ────────────────────────────────────────────────────
 
   const loadUser = useCallback(async () => {
-    if (!localStorage.getItem('access_token')) return;
+    if (!getAccessToken()) return;
     try {
       setLoading(true);
       const me = await authService.getMe();

@@ -42,14 +42,15 @@ class TestJWT:
         token = create_access_token(user_id=42)
         payload = decode_access_token(token)
         assert payload is not None
-        assert payload["sub"] == 42
+        # sub se almacena como str según RFC 7519 (spec JWT).
+        assert payload["sub"] == "42"
         assert payload["type"] == "access"
 
     def test_refresh_token_valid(self):
         token = create_refresh_token(user_id=7)
         payload = decode_refresh_token(token)
         assert payload is not None
-        assert payload["sub"] == 7
+        assert payload["sub"] == "7"
         assert payload["type"] == "refresh"
 
     def test_access_token_rejected_as_refresh(self):

@@ -1,7 +1,7 @@
 // Layout para usuarios ETV: sidebar colapsable + header
 import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { Vault, FileText, Edit, Bell, LogOut, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Vault, FileText, Edit, Bell, LogOut, ChevronLeft, ChevronRight, ShieldCheck, FileSearch } from 'lucide-react';
 
 import { useAuth } from '@/hooks/useAuth';
 import { ROUTES } from '@/utils/constants';
@@ -14,6 +14,11 @@ const NAV_ITEMS = [
     label: 'Modificaciones',
     to: ROUTES.ETV_MODIFICATIONS,
     icon: <Edit className="w-5 h-5" />,
+  },
+  {
+    label: 'Explorador',
+    to: ROUTES.ETV_EXPLORER,
+    icon: <FileSearch className="w-5 h-5" />,
   },
   {
     label: 'Reportes de Error',
@@ -71,18 +76,30 @@ export default function ExternalLayout() {
           ))}
         </nav>
 
-        {/* Usuario */}
-        <div className={`border-t border-secondary-dark p-4 ${collapsed ? 'flex flex-col items-center' : ''}`}>
+        {/* Usuario + perfil + logout */}
+        <div className={`border-t border-secondary-dark p-4 space-y-2 ${collapsed ? 'flex flex-col items-center' : ''}`}>
           {!collapsed && (
-            <p className="text-white text-xs font-medium truncate">{user?.full_name}</p>
+            <p className="text-white text-xs font-medium truncate mb-2">{user?.full_name}</p>
           )}
+          <NavLink
+            to={ROUTES.MY_SESSIONS}
+            title={collapsed ? 'Mis sesiones' : undefined}
+            className={({ isActive }) =>
+              `flex items-center gap-2 text-xs transition-colors ${
+                isActive ? 'text-white font-medium' : 'text-white/70 hover:text-white'
+              }`
+            }
+          >
+            <ShieldCheck className="w-4 h-4 flex-shrink-0" />
+            {!collapsed && <span>Mis sesiones</span>}
+          </NavLink>
           <button
             onClick={logout}
             title={collapsed ? 'Cerrar sesión' : undefined}
-            className={`flex items-center gap-2 text-white/70 hover:text-white text-xs transition-colors ${collapsed ? '' : 'mt-2'}`}
+            className="flex items-center gap-2 text-white/70 hover:text-white text-xs transition-colors"
           >
-            <LogOut className="w-4 h-4" />
-            {!collapsed && 'Cerrar sesión'}
+            <LogOut className="w-4 h-4 flex-shrink-0" />
+            {!collapsed && <span>Cerrar sesión</span>}
           </button>
         </div>
       </aside>

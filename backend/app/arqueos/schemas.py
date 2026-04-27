@@ -107,6 +107,7 @@ class ArqueoHeaderResponse(BaseModel):
     status: ArqueoStatus
     published_at: datetime | None
     locked_at: datetime | None
+    auto_published: bool = False
     created_by: int
     created_at: datetime
     updated_at: datetime

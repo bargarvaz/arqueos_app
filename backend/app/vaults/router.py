@@ -73,7 +73,7 @@ async def create_vault(
         vault_code=body.vault_code,
         vault_name=body.vault_name,
         company_id=body.company_id,
-        branch_id=body.branch_id,
+        empresa_id=body.empresa_id,
         manager_id=body.manager_id,
         treasurer_id=body.treasurer_id,
         initial_balance=body.initial_balance,
@@ -97,25 +97,38 @@ async def list_vaults(
     vaults, total = await vault_service.list_vaults(
         db, params, include_inactive=include_inactive, company_id=company_id, search=search
     )
-    return PagedResponse.build(vaults, total, params)
+
+    # Enriquecer con saldo actual (último closing publicado, fallback initial_balance)
+    balances = await vault_service.get_current_balances(db, [v.id for v in vaults])
+    items = []
+    for v in vaults:
+        item = VaultResponse.model_validate(v)
+        item.current_balance = balances.get(v.id, v.initial_balance)
+        items.append(item)
+    return PagedResponse.build(items, total, params)
 
 
 # ─── Rutas con /{vault_id} AL FINAL ──────────────────────────────────────────
 
 @router.get("/{vault_id}", response_model=VaultResponse)
 async def get_vault(vault_id: int, db: DbSession, _=Depends(get_current_user)):
-    return await vault_service.get_vault(db, vault_id)
+    vault = await vault_service.get_vault(db, vault_id)
+    balances = await vault_service.get_current_balances(db, [vault.id])
+    item = VaultResponse.model_validate(vault)
+    item.current_balance = balances.get(vault.id, vault.initial_balance)
+    return item
 
 
 @router.patch("/{vault_id}", response_model=VaultResponse)
 async def update_vault(
     request: Request, vault_id: int, body: VaultUpdate, db: DbSession, admin=AdminUser
 ):
+    # exclude_unset: respeta los campos enviados (incluyendo null para limpiar relaciones).
     return await vault_service.update_vault(
         db,
         vault_id,
         admin_user_id=admin.id,
-        **{k: v for k, v in body.model_dump().items() if v is not None},
+        **body.model_dump(exclude_unset=True),
     )
 
 

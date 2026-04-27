@@ -42,17 +42,29 @@ def create_access_token(user_id: int, extra_claims: dict[str, Any] | None = None
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def create_refresh_token(user_id: int) -> str:
-    """Crea un JWT de refresco de larga duración."""
+def create_refresh_token(user_id: int, session_id: str | None = None) -> str:
+    """
+    Crea un JWT de refresco de larga duración.
+    Si se pasa session_id, se incluye como claim `sid` para amarrar el token a la
+    sesión server-side específica (multi-pestaña / multi-dispositivo).
+    """
     now = datetime.now(timezone.utc)
     expire = now + timedelta(hours=settings.jwt_refresh_expire_hours)
-    payload = {
+    payload: dict[str, Any] = {
         "sub": str(user_id),
         "exp": expire,
         "iat": now,
         "type": "refresh",
     }
+    if session_id is not None:
+        payload["sid"] = session_id
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def hash_refresh_token(token: str) -> str:
+    """Hash determinístico SHA-256 para almacenar el refresh token sin exponerlo."""
+    import hashlib
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def decode_access_token(token: str) -> dict[str, Any] | None:

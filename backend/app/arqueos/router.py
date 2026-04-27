@@ -162,7 +162,14 @@ async def get_arqueo_header(
         from app.arqueos.service import _verify_vault_assignment
         await _verify_vault_assignment(db, current_user.id, header.vault_id)
 
-    return header
+    # Enriquecer con vault_code/vault_name para la UI
+    from app.vaults.models import Vault
+    response = ArqueoHeaderWithRecordsResponse.model_validate(header)
+    vault = await db.get(Vault, header.vault_id)
+    if vault:
+        response.vault_code = vault.vault_code
+        response.vault_name = vault.vault_name
+    return response
 
 
 # ─── Publicación ──────────────────────────────────────────────────────────────

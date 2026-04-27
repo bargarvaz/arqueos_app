@@ -95,13 +95,24 @@ async def update_personnel(db: AsyncSession, person_id: int, **kwargs) -> Person
 
 # ─── Vault ────────────────────────────────────────────────────────────────────
 
+async def _get_or_create_branch(db: AsyncSession, name: str) -> Branch:
+    """Busca o crea una Branch con el nombre dado."""
+    result = await db.execute(select(Branch).where(Branch.name == name))
+    branch = result.scalar_one_or_none()
+    if not branch:
+        branch = Branch(name=name)
+        db.add(branch)
+        await db.flush()
+    return branch
+
+
 async def create_vault(
     db: AsyncSession,
     *,
     vault_code: str,
     vault_name: str,
     company_id: int,
-    branch_id: int,
+    empresa_id: int | None,
     manager_id: int | None,
     treasurer_id: int | None,
     initial_balance: Decimal,
@@ -114,11 +125,15 @@ async def create_vault(
     if result.scalar_one_or_none():
         raise ConflictError(f"Ya existe una bóveda con el código '{vault_code}'.")
 
+    # Branch se resuelve automáticamente desde vault_code
+    branch = await _get_or_create_branch(db, vault_code)
+
     vault = Vault(
         vault_code=vault_code,
         vault_name=vault_name,
         company_id=company_id,
-        branch_id=branch_id,
+        empresa_id=empresa_id,
+        branch_id=branch.id,
         manager_id=manager_id,
         treasurer_id=treasurer_id,
         initial_balance=initial_balance,
@@ -183,15 +198,58 @@ async def list_vaults(
     return list(result.scalars().all()), total
 
 
+async def get_current_balances(
+    db: AsyncSession, vault_ids: list[int]
+) -> dict[int, Decimal]:
+    """
+    Devuelve el último closing_balance publicado por bóveda. Si una bóveda no tiene
+    ningún arqueo publicado, no aparece en el dict (el caller usa initial_balance).
+    """
+    if not vault_ids:
+        return {}
+
+    from app.arqueos.models import ArqueoHeader, ArqueoStatus
+
+    # Subconsulta: fecha máxima de header publicado por bóveda
+    subq = (
+        select(
+            ArqueoHeader.vault_id,
+            func.max(ArqueoHeader.arqueo_date).label("last_date"),
+        )
+        .where(
+            ArqueoHeader.vault_id.in_(vault_ids),
+            ArqueoHeader.status != ArqueoStatus.draft,
+        )
+        .group_by(ArqueoHeader.vault_id)
+        .subquery()
+    )
+
+    rows = await db.execute(
+        select(ArqueoHeader.vault_id, ArqueoHeader.closing_balance).join(
+            subq,
+            and_(
+                ArqueoHeader.vault_id == subq.c.vault_id,
+                ArqueoHeader.arqueo_date == subq.c.last_date,
+            ),
+        )
+    )
+    return {vid: cb for vid, cb in rows.all()}
+
+
 async def update_vault(
     db: AsyncSession, vault_id: int, admin_user_id: int, **kwargs
 ) -> Vault:
     vault = await get_vault(db, vault_id)
     old_values = {k: getattr(vault, k) for k in kwargs if hasattr(vault, k)}
 
+    # Permitir asignar null en campos opcionales (empresa_id, manager_id, treasurer_id)
+    nullable_fields = {"empresa_id", "manager_id", "treasurer_id"}
     for k, v in kwargs.items():
-        if v is not None and hasattr(vault, k):
-            setattr(vault, k, v)
+        if not hasattr(vault, k):
+            continue
+        if v is None and k not in nullable_fields:
+            continue
+        setattr(vault, k, v)
 
     await log_action(
         db,

@@ -30,6 +30,7 @@ async def explore_records(
     include_counterparts: bool = True,
     page: int = 1,
     page_size: int = 25,
+    allowed_vault_ids: list[int] | None = None,
 ) -> tuple[list[dict], int]:
     """
     Explorador avanzado de registros de arqueo con JOINs para
@@ -57,6 +58,12 @@ async def explore_records(
 
     if not include_counterparts:
         query = query.where(ArqueoRecord.is_counterpart == False)
+
+    if allowed_vault_ids is not None:
+        if not allowed_vault_ids:
+            # ETV sin asignaciones: no debe ver nada
+            return [], 0
+        query = query.where(ArqueoHeader.vault_id.in_(allowed_vault_ids))
 
     if company_id:
         query = query.where(Vault.company_id == company_id)
@@ -143,12 +150,16 @@ async def download_records_xlsx(
     user_id: int,
     ip_address: str | None = None,
     user_agent: str | None = None,
+    allowed_vault_ids: list[int] | None = None,
     **filters,
 ) -> bytes:
     """Descarga XLSX de registros con auditoría de la acción download."""
     from app.reports.generators import generate_records_xlsx
 
-    rows, _ = await explore_records(db, page=1, page_size=10_000, **filters)
+    rows, _ = await explore_records(
+        db, page=1, page_size=10_000,
+        allowed_vault_ids=allowed_vault_ids, **filters,
+    )
 
     filters_clean = {
         k: str(v) if isinstance(v, date) else v
@@ -174,15 +185,21 @@ async def download_records_xlsx(
 async def get_vault_day_balances(
     db: AsyncSession,
     target_date: date,
+    allowed_vault_ids: list[int] | None = None,
 ) -> list[dict]:
     """
     Retorna opening_balance, closing_balance y status para cada bóveda activa
     en una fecha dada. Si no hay header ese día, opening = último closing anterior
     (o initial_balance si es la primera vez).
+
+    Si `allowed_vault_ids` se pasa (ETV), solo devuelve esas bóvedas.
     """
-    vaults_result = await db.execute(
-        select(Vault).where(Vault.is_active == True).order_by(Vault.vault_code)
-    )
+    vaults_q = select(Vault).where(Vault.is_active == True)
+    if allowed_vault_ids is not None:
+        if not allowed_vault_ids:
+            return []
+        vaults_q = vaults_q.where(Vault.id.in_(allowed_vault_ids))
+    vaults_result = await db.execute(vaults_q.order_by(Vault.vault_code))
     vaults = list(vaults_result.scalars().all())
     if not vaults:
         return []

@@ -254,13 +254,14 @@ function HolidaysCatalog() {
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({ holiday_date: '', name: '' });
   const [error, setError] = useState('');
+  const [includeInactive, setIncludeInactive] = useState(false);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [includeInactive]);
 
   const load = async () => {
-    const data = await catalogService.getHolidays(true);
+    const data = await catalogService.getHolidays(includeInactive);
     setItems(data);
   };
 
@@ -304,8 +305,8 @@ function HolidaysCatalog() {
         </>
       )}
       onAdd={() => setShowForm(true)}
-      includeInactive={true}
-      onToggleInactive={() => {}}
+      includeInactive={includeInactive}
+      onToggleInactive={() => setIncludeInactive(!includeInactive)}
     >
       {showForm && (
         <InlineForm error={error} onCancel={() => setShowForm(false)} onSubmit={handleSubmit} isEdit={false}>

@@ -37,7 +37,7 @@ export default function EtvVaults() {
   }, []);
 
   const handleSelectVault = (vs: VaultStatus) => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
     navigate(ROUTES.ETV_ARQUEO_FORM, {
       state: { vault: vs.vault, arqueo_date: today, header_id: vs.today_header_id },
     });

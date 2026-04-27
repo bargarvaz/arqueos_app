@@ -143,10 +143,18 @@ async def update_user(
     puesto: str | None = None,
     is_active: bool | None = None,
     company_id: int | None = None,
+    empresa_id: int | None = None,
+    fields_set: set[str] | None = None,
     ip_address: str | None = None,
     user_agent: str | None = None,
 ) -> User:
-    """Actualiza datos del usuario (solo Admin)."""
+    """
+    Actualiza datos del usuario (solo Admin).
+
+    fields_set: nombres de campos enviados explícitamente por el cliente. Permite
+    distinguir entre "no enviado" y "enviado como null" para limpiar relaciones.
+    Si es None, se usa la convención legacy (None = no actualizar).
+    """
     user = await get_user(db, user_id)
 
     old_values = {
@@ -154,16 +162,26 @@ async def update_user(
         "puesto": user.puesto,
         "is_active": user.is_active,
         "company_id": user.company_id,
+        "empresa_id": user.empresa_id,
     }
 
-    if full_name is not None:
+    explicit = fields_set if fields_set is not None else {
+        k for k, v in {
+            "full_name": full_name, "puesto": puesto, "is_active": is_active,
+            "company_id": company_id, "empresa_id": empresa_id,
+        }.items() if v is not None
+    }
+
+    if "full_name" in explicit and full_name is not None:
         user.full_name = full_name
-    if puesto is not None:
+    if "puesto" in explicit:
         user.puesto = puesto
-    if is_active is not None:
+    if "is_active" in explicit and is_active is not None:
         user.is_active = is_active
-    if company_id is not None:
+    if "company_id" in explicit:
         user.company_id = company_id
+    if "empresa_id" in explicit:
+        user.empresa_id = empresa_id
 
     await log_action(
         db,
@@ -176,6 +194,7 @@ async def update_user(
             "full_name": user.full_name,
             "is_active": user.is_active,
             "company_id": user.company_id,
+            "empresa_id": user.empresa_id,
         },
         ip_address=ip_address,
         user_agent=user_agent,

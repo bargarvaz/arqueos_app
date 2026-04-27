@@ -33,6 +33,9 @@ const ModificationList = lazy(() => import('@/pages/etv/ModificationList'));
 const ModificationForm = lazy(() => import('@/pages/etv/ModificationForm'));
 const EtvErrorReports = lazy(() => import('@/pages/etv/EtvErrorReports'));
 
+// Perfil (todos los roles)
+const MySessions = lazy(() => import('@/pages/profile/MySessions'));
+
 const Lazy = ({ children }: { children: React.ReactNode }) => (
   <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted text-sm">Cargando...</div>}>
     {children}
@@ -123,6 +126,7 @@ export default function AppRouter() {
               </RequireRole>
             }
           />
+          <Route path={ROUTES.MY_SESSIONS} element={<Lazy><MySessions /></Lazy>} />
         </Route>
 
         {/* Rutas ETV */}
@@ -143,6 +147,8 @@ export default function AppRouter() {
           <Route path={ROUTES.ETV_MODIFICATIONS} element={<Lazy><ModificationList /></Lazy>} />
           <Route path={`${ROUTES.ETV_MODIFICATIONS}/:headerId`} element={<Lazy><ModificationForm /></Lazy>} />
           <Route path={ROUTES.ETV_ERROR_REPORTS} element={<Lazy><EtvErrorReports /></Lazy>} />
+          <Route path={ROUTES.ETV_EXPLORER} element={<Lazy><ArqueoExplorer /></Lazy>} />
+          <Route path={ROUTES.MY_SESSIONS} element={<Lazy><MySessions /></Lazy>} />
         </Route>
 
         {/* Redireccionamiento por defecto */}

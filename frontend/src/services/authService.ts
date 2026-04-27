@@ -1,10 +1,11 @@
 // Servicio de autenticación: login, OTP, logout, cambio de contraseña
 
-import api from './api';
+import api, { setAuthSession, clearAuthSession } from './api';
 
 export interface LoginResponse {
   access_token: string;
   token_type: string;
+  session_id: string;
   must_change_password: boolean;
 }
 
@@ -17,6 +18,8 @@ export interface MeResponse {
   must_change_password: boolean;
   mfa_enabled: boolean;
   company_id: number | null;
+  empresa_id: number | null;
+  puesto: string | null;
 }
 
 export interface OtpStep1Response {
@@ -25,6 +28,7 @@ export interface OtpStep1Response {
   // MFA desactivado: se devuelven tokens directamente
   access_token?: string;
   token_type?: string;
+  session_id?: string;
   must_change_password?: boolean;
 }
 
@@ -32,7 +36,7 @@ const authService = {
   /** Login para usuarios internos (admin, operations, data_science). */
   loginInternal: async (email: string, password: string): Promise<LoginResponse> => {
     const { data } = await api.post<LoginResponse>('/auth/internal/login', { email, password });
-    localStorage.setItem('access_token', data.access_token);
+    setAuthSession(data.access_token, data.session_id);
     return data;
   },
 
@@ -40,8 +44,8 @@ const authService = {
   loginExternalStep1: async (email: string, password: string): Promise<OtpStep1Response> => {
     const { data } = await api.post<OtpStep1Response>('/auth/external/login', { email, password });
     // Cuando MFA está desactivado el backend retorna el token directamente
-    if (data.access_token) {
-      localStorage.setItem('access_token', data.access_token);
+    if (data.access_token && data.session_id) {
+      setAuthSession(data.access_token, data.session_id);
     }
     return data;
   },
@@ -57,7 +61,7 @@ const authService = {
       otp_code,
       session_token,
     });
-    localStorage.setItem('access_token', data.access_token);
+    setAuthSession(data.access_token, data.session_id);
     return data;
   },
 
@@ -67,12 +71,12 @@ const authService = {
     return data;
   },
 
-  /** Cierra sesión y limpia el token local. */
+  /** Cierra sesión y limpia los datos de la pestaña actual. */
   logout: async (): Promise<void> => {
     try {
       await api.post('/auth/logout');
     } finally {
-      localStorage.removeItem('access_token');
+      clearAuthSession();
     }
   },
 
@@ -94,6 +98,27 @@ const authService = {
       confirm_password,
     });
   },
+
+  /** Lista las sesiones activas del usuario actual. */
+  listSessions: async (): Promise<AuthSession[]> => {
+    const { data } = await api.get<AuthSession[]>('/auth/sessions');
+    return data;
+  },
+
+  /** Revoca una sesión por id. No permite revocar la sesión actual. */
+  revokeSession: async (session_id: string): Promise<void> => {
+    await api.post(`/auth/sessions/${session_id}/revoke`);
+  },
 };
+
+export interface AuthSession {
+  session_id: string;
+  ip_address: string | null;
+  user_agent: string | null;
+  created_at: string;
+  last_used_at: string;
+  expires_at: string;
+  is_current: boolean;
+}
 
 export default authService;

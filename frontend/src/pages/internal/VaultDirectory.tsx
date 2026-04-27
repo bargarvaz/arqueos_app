@@ -1,14 +1,15 @@
 // Directorio de bóvedas — CRUD completo para admin
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Plus, Power, PowerOff, Edit2 } from 'lucide-react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import type { ColumnDef } from '@tanstack/react-table';
 
 import DataTable from '@/components/tables/DataTable';
-import vaultService, { type Vault, type Branch } from '@/services/vaultService';
-import userService, { type Company, type UserResponse } from '@/services/userService';
+import ComboSelect, { type ComboOption } from '@/components/ui/ComboSelect';
+import vaultService, { type Vault } from '@/services/vaultService';
+import userService, { type Company, type Empresa, type UserResponse } from '@/services/userService';
 import { formatCurrency } from '@/utils/formatters';
 import { getErrorMessage } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
@@ -16,8 +17,8 @@ import { useAuthStore } from '@/store/authStore';
 const createSchema = z.object({
   vault_code: z.string().min(1, 'Código requerido.').max(20),
   vault_name: z.string().min(2, 'Nombre requerido.').max(150),
-  company_id: z.number({ invalid_type_error: 'Selecciona empresa.' }).min(1),
-  branch_id: z.number({ invalid_type_error: 'Selecciona ubicación.' }).min(1),
+  company_id: z.number({ invalid_type_error: 'Selecciona ETV.' }).min(1),
+  empresa_id: z.number({ invalid_type_error: 'Selecciona empresa.' }).min(1, 'Empresa requerida.'),
   manager_id: z.number().nullable().optional(),
   treasurer_id: z.number().nullable().optional(),
   initial_balance: z.string().regex(/^\d+(\.\d{1,2})?$/, 'Saldo inválido.'),
@@ -25,7 +26,7 @@ const createSchema = z.object({
 
 const editSchema = z.object({
   vault_name: z.string().min(2, 'Nombre requerido.').max(150),
-  branch_id: z.number({ invalid_type_error: 'Selecciona ubicación.' }).min(1),
+  empresa_id: z.number().nullable().optional(),
   manager_id: z.number().nullable().optional(),
   treasurer_id: z.number().nullable().optional(),
 });
@@ -46,7 +47,7 @@ export default function VaultDirectory() {
   const [isLoading, setIsLoading] = useState(false);
 
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
+  const [allEmpresas, setAllEmpresas] = useState<Empresa[]>([]);
   const [etvUsers, setEtvUsers] = useState<UserResponse[]>([]);
 
   const [showCreate, setShowCreate] = useState(false);
@@ -57,16 +58,26 @@ export default function VaultDirectory() {
   const [reactivateBalance, setReactivateBalance] = useState('0.00');
   const [reactivateError, setReactivateError] = useState('');
 
-  // Creación inline de ubicación
-  const [inlineBranchCtx, setInlineBranchCtx] = useState<'create' | 'edit' | null>(null);
-  const [inlineBranchName, setInlineBranchName] = useState('');
-  const [inlineBranchError, setInlineBranchError] = useState('');
-
   const createForm = useForm<CreateForm>({
     resolver: zodResolver(createSchema),
     defaultValues: { initial_balance: '0.00' },
   });
   const editForm = useForm<EditForm>({ resolver: zodResolver(editSchema) });
+
+  // Opciones de personal para ComboSelect
+  const userOptions = useMemo<ComboOption[]>(
+    () => etvUsers.map(u => ({ value: u.id, label: u.puesto ? `${u.full_name} — ${u.puesto}` : u.full_name })),
+    [etvUsers],
+  );
+
+  // Empresas filtradas según la ETV seleccionada en el form de creación
+  const selectedCompanyId = useWatch({ control: createForm.control, name: 'company_id' });
+  const createEmpresas = allEmpresas.filter(e => e.etv_id === selectedCompanyId && e.is_active);
+
+  // Empresas filtradas para el form de edición (por ETV de la bóveda editada)
+  const editEmpresas = editTarget
+    ? allEmpresas.filter(e => e.etv_id === editTarget.company_id && e.is_active)
+    : [];
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -89,28 +100,19 @@ export default function VaultDirectory() {
     if (!isAdmin) return;
     Promise.all([
       userService.listCompanies(),
-      vaultService.listBranches(),
+      userService.listEmpresas(),
       userService.listUsers({ page: 1, page_size: 0, role: 'etv', is_active: true }),
-    ]).then(([c, b, u]) => {
+    ]).then(([c, e, u]) => {
       setCompanies(c);
-      setBranches(b);
+      setAllEmpresas(e);
       setEtvUsers(u.items);
     }).catch(() => {});
   }, [isAdmin]);
 
-  const handleInlineBranch = async (ctx: 'create' | 'edit') => {
-    if (!inlineBranchName.trim()) return;
-    setInlineBranchError('');
-    try {
-      const branch = await vaultService.createBranch(inlineBranchName.trim());
-      const updated = await vaultService.listBranches();
-      setBranches(updated);
-      if (ctx === 'create') createForm.setValue('branch_id', branch.id);
-      else editForm.setValue('branch_id', branch.id);
-      setInlineBranchCtx(null);
-      setInlineBranchName('');
-    } catch (err) { setInlineBranchError(getErrorMessage(err)); }
-  };
+  // Limpiar empresa al cambiar ETV en creación
+  useEffect(() => {
+    createForm.resetField('empresa_id');
+  }, [selectedCompanyId]);
 
   const handleDeactivate = async (vault: Vault) => {
     if (!confirm(`¿Desactivar la bóveda ${vault.vault_code} — ${vault.vault_name}?`)) return;
@@ -137,10 +139,9 @@ export default function VaultDirectory() {
   const openEdit = (vault: Vault) => {
     setEditTarget(vault);
     setEditError('');
-    setInlineBranchCtx(null);
     editForm.reset({
       vault_name: vault.vault_name,
-      branch_id: vault.branch_id,
+      empresa_id: vault.empresa_id ?? null,
       manager_id: vault.manager_id ?? null,
       treasurer_id: vault.treasurer_id ?? null,
     });
@@ -152,7 +153,7 @@ export default function VaultDirectory() {
     try {
       await vaultService.updateVault(editTarget.id, {
         vault_name: data.vault_name,
-        branch_id: data.branch_id,
+        empresa_id: data.empresa_id ?? null,
         manager_id: data.manager_id ?? null,
         treasurer_id: data.treasurer_id ?? null,
       });
@@ -168,7 +169,7 @@ export default function VaultDirectory() {
         vault_code: data.vault_code.toUpperCase(),
         vault_name: data.vault_name,
         company_id: data.company_id,
-        branch_id: data.branch_id,
+        empresa_id: data.empresa_id ?? null,
         manager_id: data.manager_id ?? null,
         treasurer_id: data.treasurer_id ?? null,
         initial_balance: data.initial_balance,
@@ -185,53 +186,6 @@ export default function VaultDirectory() {
     return u ? u.full_name : `#${id}`;
   };
 
-  const renderBranchField = (ctx: 'create' | 'edit') => {
-    const reg = ctx === 'create'
-      ? createForm.register('branch_id', { valueAsNumber: true })
-      : editForm.register('branch_id', { valueAsNumber: true });
-    const err = ctx === 'create'
-      ? createForm.formState.errors.branch_id
-      : editForm.formState.errors.branch_id;
-    return (
-      <div>
-        <label className="label">Ubicación de bóveda</label>
-        <div className="flex gap-2">
-          <select className={`flex-1 ${err ? 'input-error' : 'input'}`} {...reg}>
-            <option value="">Seleccionar...</option>
-            {branches.filter(b => b.is_active).map(b => (
-              <option key={b.id} value={b.id}>{b.name}</option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => { setInlineBranchCtx(ctx); setInlineBranchName(''); setInlineBranchError(''); }}
-            className="btn-secondary text-xs whitespace-nowrap px-2"
-          >
-            + Nueva
-          </button>
-        </div>
-        {inlineBranchCtx === ctx && (
-          <div className="flex gap-2 mt-2">
-            <input
-              autoFocus
-              className="input flex-1 text-sm"
-              placeholder="Nombre de la ubicación"
-              value={inlineBranchName}
-              onChange={e => setInlineBranchName(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleInlineBranch(ctx); } }}
-            />
-            <button type="button" onClick={() => handleInlineBranch(ctx)} className="btn-primary text-xs">Crear</button>
-            <button type="button" onClick={() => setInlineBranchCtx(null)} className="btn-ghost text-xs">×</button>
-          </div>
-        )}
-        {inlineBranchCtx === ctx && inlineBranchError && (
-          <p className="text-status-error text-xs mt-1">{inlineBranchError}</p>
-        )}
-        {err && <p className="text-status-error text-xs mt-1">{err.message}</p>}
-      </div>
-    );
-  };
-
   const columns: ColumnDef<Vault>[] = [
     {
       accessorKey: 'vault_code',
@@ -242,11 +196,13 @@ export default function VaultDirectory() {
     },
     { accessorKey: 'vault_name', header: 'Nombre' },
     {
-      accessorKey: 'initial_balance',
-      header: 'Saldo Inicial',
-      cell: ({ getValue }) => (
-        <span className="font-mono">{formatCurrency(String(getValue()))}</span>
-      ),
+      accessorKey: 'current_balance',
+      header: 'Saldo Actual',
+      cell: ({ row }) => {
+        const v = row.original;
+        const balance = v.current_balance ?? v.initial_balance;
+        return <span className="font-mono">{formatCurrency(String(balance))}</span>;
+      },
     },
     {
       id: 'manager',
@@ -325,7 +281,7 @@ export default function VaultDirectory() {
           </label>
           {isAdmin && (
             <button
-              onClick={() => { setShowCreate(true); setCreateError(''); setInlineBranchCtx(null); createForm.reset({ initial_balance: '0.00' }); }}
+              onClick={() => { setShowCreate(true); setCreateError(''); createForm.reset({ initial_balance: '0.00' }); }}
               className="btn-primary flex items-center gap-2"
             >
               <Plus className="w-4 h-4" /> Nueva bóveda
@@ -404,25 +360,50 @@ export default function VaultDirectory() {
                   )}
                 </div>
                 <div>
-                  {renderBranchField('create')}
+                  <label className="label">Empresa</label>
+                  <select
+                    className={createForm.formState.errors.empresa_id ? 'input-error' : 'input'}
+                    {...createForm.register('empresa_id', { valueAsNumber: true })}
+                    disabled={!selectedCompanyId || createEmpresas.length === 0}
+                  >
+                    <option value="">Seleccionar...</option>
+                    {createEmpresas.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  </select>
+                  {createForm.formState.errors.empresa_id && (
+                    <p className="text-status-error text-xs mt-1">{createForm.formState.errors.empresa_id.message}</p>
+                  )}
                 </div>
                 <div>
                   <label className="label">Gerente (opcional)</label>
-                  <select className="input" {...createForm.register('manager_id', { valueAsNumber: true })}>
-                    <option value="">Ninguno</option>
-                    {etvUsers.map(u => (
-                      <option key={u.id} value={u.id}>{u.full_name}{u.puesto ? ` — ${u.puesto}` : ''}</option>
-                    ))}
-                  </select>
+                  <Controller
+                    control={createForm.control}
+                    name="manager_id"
+                    render={({ field }) => (
+                      <ComboSelect
+                        options={userOptions}
+                        value={field.value ?? null}
+                        onChange={field.onChange}
+                        placeholder="Buscar gerente..."
+                        emptyLabel="Ninguno"
+                      />
+                    )}
+                  />
                 </div>
                 <div>
                   <label className="label">Tesorero (opcional)</label>
-                  <select className="input" {...createForm.register('treasurer_id', { valueAsNumber: true })}>
-                    <option value="">Ninguno</option>
-                    {etvUsers.map(u => (
-                      <option key={u.id} value={u.id}>{u.full_name}{u.puesto ? ` — ${u.puesto}` : ''}</option>
-                    ))}
-                  </select>
+                  <Controller
+                    control={createForm.control}
+                    name="treasurer_id"
+                    render={({ field }) => (
+                      <ComboSelect
+                        options={userOptions}
+                        value={field.value ?? null}
+                        onChange={field.onChange}
+                        placeholder="Buscar tesorero..."
+                        emptyLabel="Ninguno"
+                      />
+                    )}
+                  />
                 </div>
               </div>
               {createError && <p className="text-status-error text-sm">{createError}</p>}
@@ -461,25 +442,47 @@ export default function VaultDirectory() {
                   )}
                 </div>
                 <div className="col-span-2">
-                  {renderBranchField('edit')}
+                  <label className="label">Empresa (opcional)</label>
+                  <select
+                    className="input"
+                    {...editForm.register('empresa_id', { valueAsNumber: true })}
+                    disabled={editEmpresas.length === 0}
+                  >
+                    <option value="">Ninguna</option>
+                    {editEmpresas.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label className="label">Gerente</label>
-                  <select className="input" {...editForm.register('manager_id', { valueAsNumber: true })}>
-                    <option value="">Ninguno</option>
-                    {etvUsers.map(u => (
-                      <option key={u.id} value={u.id}>{u.full_name}{u.puesto ? ` — ${u.puesto}` : ''}</option>
-                    ))}
-                  </select>
+                  <Controller
+                    control={editForm.control}
+                    name="manager_id"
+                    render={({ field }) => (
+                      <ComboSelect
+                        options={userOptions}
+                        value={field.value ?? null}
+                        onChange={field.onChange}
+                        placeholder="Buscar gerente..."
+                        emptyLabel="Ninguno"
+                      />
+                    )}
+                  />
                 </div>
                 <div>
                   <label className="label">Tesorero</label>
-                  <select className="input" {...editForm.register('treasurer_id', { valueAsNumber: true })}>
-                    <option value="">Ninguno</option>
-                    {etvUsers.map(u => (
-                      <option key={u.id} value={u.id}>{u.full_name}{u.puesto ? ` — ${u.puesto}` : ''}</option>
-                    ))}
-                  </select>
+                  <Controller
+                    control={editForm.control}
+                    name="treasurer_id"
+                    render={({ field }) => (
+                      <ComboSelect
+                        options={userOptions}
+                        value={field.value ?? null}
+                        onChange={field.onChange}
+                        placeholder="Buscar tesorero..."
+                        emptyLabel="Ninguno"
+                      />
+                    )}
+                  />
                 </div>
               </div>
               {editError && <p className="text-status-error text-sm">{editError}</p>}

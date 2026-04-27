@@ -4,8 +4,11 @@ import api from './api';
 export interface ModifiableArqueo {
   header_id: number;
   vault_id: number;
+  vault_code: string | null;
+  vault_name: string | null;
   arqueo_date: string;
   status: string;
+  auto_published: boolean;
   opening_balance: string;
   closing_balance: string;
   grace_deadline: string;

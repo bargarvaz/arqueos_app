@@ -24,6 +24,7 @@ from app.modifications.models import ArqueoModification  # noqa: F401
 from app.documents.models import Certificate  # noqa: F401
 from app.notifications.models import Notification  # noqa: F401
 from app.error_reports.models import ErrorReport, ErrorReportRecord  # noqa: F401
+from app.auth.session_model import AuthSession  # noqa: F401
 
 config = context.config
 

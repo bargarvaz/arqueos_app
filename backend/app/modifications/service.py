@@ -21,6 +21,7 @@ from sqlalchemy import select
 from app.arqueos.models import ArqueoHeader, ArqueoRecord, ArqueoStatus, CounterpartType
 from app.arqueos.validators import validate_record, is_row_empty
 from app.arqueos.service import recalculate_cascade, _record_snapshot
+from app.catalogs.service import get_last_business_day_of_month
 from app.modifications.models import ArqueoModification, ModificationType
 from app.common.exceptions import NotFoundError, ForbiddenError, BusinessRuleError
 from app.common.id_generator import generate_unique_uid
@@ -37,9 +38,6 @@ async def get_grace_deadline(db: AsyncSession, arqueo_date: date) -> date:
     Calcula el último día hábil del mes siguiente a arqueo_date.
     Usa el catálogo de holidays para excluir días inhábiles.
     """
-    from app.catalogs.service import get_last_business_day_of_month
-    import calendar
-
     # Mes M+1
     year = arqueo_date.year
     month = arqueo_date.month + 1
@@ -74,7 +72,7 @@ def _negate_record(record: ArqueoRecord) -> dict[str, Any]:
     return {
         "voucher": record.voucher,
         "reference": record.reference,
-        "branch_id": record.branch_id,
+        "sucursal_id": record.sucursal_id,
         "movement_type_id": record.movement_type_id,
         # Invertir flujo para cancelar efecto en saldo
         "entries": str(withdrawals),
@@ -96,7 +94,7 @@ def _negate_record(record: ArqueoRecord) -> dict[str, Any]:
         "coin_050": str(record.coin_050),
         "coin_020": str(record.coin_020),
         "coin_010": str(record.coin_010),
-        "record_date": str(record.record_date),
+        "record_date": record.record_date,
     }
 
 
@@ -297,7 +295,7 @@ async def edit_record(
         original_record_uid=original.record_uid,
         voucher=new_data.get("voucher", original.voucher),
         reference=new_data.get("reference", original.reference),
-        branch_id=new_data.get("branch_id", original.branch_id),
+        sucursal_id=new_data.get("sucursal_id", original.sucursal_id),
         movement_type_id=new_data.get("movement_type_id", original.movement_type_id),
         entries=new_data.get("entries", "0"),
         withdrawals=new_data.get("withdrawals", "0"),
@@ -393,7 +391,7 @@ async def add_record(
         is_counterpart=False,
         voucher=record_data.get("voucher", ""),
         reference=record_data.get("reference", ""),
-        branch_id=record_data["branch_id"],
+        sucursal_id=record_data.get("sucursal_id"),
         movement_type_id=record_data["movement_type_id"],
         entries=record_data.get("entries", "0"),
         withdrawals=record_data.get("withdrawals", "0"),
@@ -457,9 +455,15 @@ async def list_modifiable_headers(
     """
     Retorna los arqueos publicados de las bóvedas asignadas al ETV
     que aún están dentro del periodo de gracia.
+
+    Si dentro del periodo de gracia hay días sin header (la bóveda nunca abrió la
+    pantalla ese día), se crean en blanco como auto_published para que el ETV
+    pueda agregar movimientos vía el módulo de modificaciones.
     """
+    from datetime import timedelta
     from app.users.models import UserVaultAssignment
     from app.vaults.models import Vault
+    from app.arqueos.service import ensure_blank_headers_for_range
 
     # Obtener vault_ids asignados
     assignment_result = await db.execute(
@@ -472,6 +476,23 @@ async def list_modifiable_headers(
 
     if not vault_ids:
         return []
+
+    today = date.today()
+
+    # Rango del periodo de gracia: arqueos del mes anterior y de este mes hasta ayer.
+    # Si hoy es 2026-04-27, el rango es 2026-03-01 .. 2026-04-26.
+    first_of_this_month = today.replace(day=1)
+    grace_start = (first_of_this_month - timedelta(days=1)).replace(day=1)
+    grace_end = today - timedelta(days=1)
+
+    # Asegurar headers en blanco para los días faltantes en el rango (por bóveda)
+    for vid in vault_ids:
+        try:
+            await ensure_blank_headers_for_range(
+                db, vid, grace_start, grace_end, created_by=user_id
+            )
+        except Exception as exc:
+            logger.error("ensure_blank_headers falló vault_id=%d: %s", vid, exc)
 
     # Obtener headers publicados (no locked) de esas bóvedas, excluyendo hoy
     # (el mismo día se re-publica en lugar de modificar)
@@ -486,7 +507,10 @@ async def list_modifiable_headers(
     )
     headers = headers_result.scalars().all()
 
-    today = date.today()
+    # Pre-cargar bóvedas para enriquecer con vault_code/vault_name
+    vault_result = await db.execute(select(Vault).where(Vault.id.in_(vault_ids)))
+    vault_map = {v.id: v for v in vault_result.scalars().all()}
+
     results = []
     for header in headers:
         try:
@@ -494,11 +518,15 @@ async def list_modifiable_headers(
                 db, header.arqueo_date
             )
             if is_within:
+                vault = vault_map.get(header.vault_id)
                 results.append({
                     "header_id": header.id,
                     "vault_id": header.vault_id,
+                    "vault_code": vault.vault_code if vault else None,
+                    "vault_name": vault.vault_name if vault else None,
                     "arqueo_date": str(header.arqueo_date),
                     "status": header.status,
+                    "auto_published": header.auto_published,
                     "opening_balance": str(header.opening_balance),
                     "closing_balance": str(header.closing_balance),
                     "grace_deadline": str(deadline),

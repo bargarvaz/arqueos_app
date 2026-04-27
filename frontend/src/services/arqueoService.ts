@@ -7,7 +7,7 @@ export interface VaultStatus {
     vault_code: string;
     vault_name: string;
     initial_balance: string;
-    sucursal_id: number | null;
+    branch_id: number;
   };
   today_status: 'draft' | 'published' | 'locked' | null;
   today_header_id: number | null;
@@ -54,12 +54,15 @@ export interface ArqueoRecord {
 export interface ArqueoHeader {
   id: number;
   vault_id: number;
+  vault_code: string | null;
+  vault_name: string | null;
   arqueo_date: string;
   opening_balance: string;
   closing_balance: string;
   status: 'draft' | 'published' | 'locked';
   published_at: string | null;
   locked_at: string | null;
+  auto_published: boolean;
   created_by: number;
   created_at: string;
   updated_at: string;
@@ -143,6 +146,24 @@ const arqueoService = {
     page_size?: number;
   }) => {
     const { data } = await api.get('/arqueos/headers', { params });
+    return data;
+  },
+
+  // ─── Historial ETV con detalles ────────────────────────────────────────────
+  listMyHistory: async (params: {
+    vault_id?: number;
+    date_from?: string;
+    date_to?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<{
+    items: ArqueoHeader[];
+    total: number;
+    page: number;
+    page_size: number;
+    pages: number;
+  }> => {
+    const { data } = await api.get('/arqueos/my-history', { params });
     return data;
   },
 };

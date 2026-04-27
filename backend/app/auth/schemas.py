@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """Schemas Pydantic del módulo de autenticación."""
 
+from datetime import datetime
+
 from pydantic import BaseModel, EmailStr, field_validator
 from app.auth.utils import validate_password_strength
 
@@ -31,7 +33,18 @@ class OtpResendRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    session_id: str | None = None
     must_change_password: bool = False
+
+
+class AuthSessionResponse(BaseModel):
+    session_id: str
+    ip_address: str | None
+    user_agent: str | None
+    created_at: datetime
+    last_used_at: datetime
+    expires_at: datetime
+    is_current: bool
 
 
 class RefreshRequest(BaseModel):
@@ -68,5 +81,7 @@ class MeResponse(BaseModel):
     must_change_password: bool
     mfa_enabled: bool
     company_id: int | None
+    empresa_id: int | None = None
+    puesto: str | None = None
 
     model_config = {"from_attributes": True}

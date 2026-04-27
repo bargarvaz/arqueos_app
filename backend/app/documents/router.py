@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 """Router del módulo de documentos (certificados PDF)."""
 
+import io
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, Request, UploadFile, File
-from fastapi.responses import RedirectResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, get_current_user, require_roles
@@ -69,17 +72,48 @@ async def upload_certificate(
 
 @router.get(
     "/certificates/{certificate_id}/download",
-    summary="Obtener URL pre-firmada para descarga del certificado",
+    summary="Descarga el certificado PDF (streaming desde MinIO vía backend)",
 )
 async def download_certificate(
     certificate_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    url = await service.get_certificate_download_url(
-        db, certificate_id, current_user.id
+    """
+    Devuelve el archivo directamente. Antes se generaba una URL pre-firmada de
+    MinIO, pero el host (`minio:9000`) no es resoluble desde el browser, así
+    que el backend hace de proxy.
+
+    ETV solo puede descargar certificados de sus bóvedas asignadas.
+    """
+    from app.documents.models import Certificate
+    from app.common.exceptions import NotFoundError
+
+    cert = await db.get(Certificate, certificate_id)
+    if not cert or not cert.is_active:
+        raise NotFoundError("Certificado")
+
+    if current_user.role == "etv":
+        from app.arqueos.service import _verify_vault_assignment
+        header = await get_header(db, cert.arqueo_header_id)
+        await _verify_vault_assignment(db, current_user.id, header.vault_id)
+
+    content, file_name, content_type = await service.stream_certificate(
+        db, certificate_id
     )
-    return {"download_url": url}
+
+    # Codificar el filename para soportar acentos/espacios sin romper el header
+    safe_name = quote(file_name)
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type=content_type or "application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{file_name}"; filename*=UTF-8\'\'{safe_name}'
+            ),
+            "Content-Length": str(len(content)),
+        },
+    )
 
 
 @router.delete(

@@ -9,9 +9,10 @@ import {
   BarChart3,
   Settings,
   LogOut,
-  Menu,
-  X,
+  ChevronLeft,
+  ChevronRight,
   ClipboardList,
+  ShieldCheck,
 } from 'lucide-react';
 
 import { useAuth } from '@/hooks/useAuth';
@@ -75,7 +76,7 @@ const NAV_ITEMS: NavItem[] = [
 
 export default function InternalLayout() {
   const { user, logout } = useAuth();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
 
   const visibleItems = NAV_ITEMS.filter(
     (item) => !item.roles || item.roles.includes(user?.role ?? ''),
@@ -88,23 +89,25 @@ export default function InternalLayout() {
   return (
     <div className="flex h-screen bg-surface overflow-hidden">
       {/* Sidebar */}
-      <aside
-        className={`
-          bg-primary flex flex-col transition-all duration-200
-          ${sidebarOpen ? 'w-60' : 'w-16'}
-        `}
-      >
-        {/* Logo */}
-        <div className="flex items-center gap-3 px-4 py-5 border-b border-primary-dark">
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="text-white/70 hover:text-white transition-colors flex-shrink-0"
-          >
-            {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </button>
-          {sidebarOpen && (
-            <span className="text-white font-bold text-sm truncate">Sistema Arqueos</span>
+      <aside className={`bg-primary flex flex-col transition-all duration-200 flex-shrink-0 ${collapsed ? 'w-16' : 'w-60'}`}>
+        {/* Logo + toggle */}
+        <div className={`px-4 py-5 border-b border-primary-dark flex items-center ${collapsed ? 'justify-center' : 'justify-between'}`}>
+          {!collapsed && (
+            <div className="min-w-0">
+              <span className="text-white font-bold text-sm">Sistema Arqueos</span>
+              <p className="text-white/60 text-xs mt-0.5 capitalize">{user?.role}</p>
+            </div>
           )}
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className="text-white/70 hover:text-white flex-shrink-0 transition-colors"
+            title={collapsed ? 'Expandir menú' : 'Colapsar menú'}
+          >
+            {collapsed
+              ? <ChevronRight className="w-5 h-5" />
+              : <ChevronLeft className="w-5 h-5" />
+            }
+          </button>
         </div>
 
         {/* Navegación */}
@@ -113,33 +116,45 @@ export default function InternalLayout() {
             <NavLink
               key={item.to}
               to={item.to}
+              title={collapsed ? item.label : undefined}
               className={({ isActive }) => `
                 flex items-center gap-3 px-4 py-3 text-sm transition-colors
+                ${collapsed ? 'justify-center' : ''}
                 ${isActive
                   ? 'bg-primary-dark text-white font-medium'
                   : 'text-white/70 hover:bg-primary-dark/50 hover:text-white'}
               `}
             >
               <span className="flex-shrink-0">{item.icon}</span>
-              {sidebarOpen && <span className="truncate">{item.label}</span>}
+              {!collapsed && <span className="truncate">{item.label}</span>}
             </NavLink>
           ))}
         </nav>
 
-        {/* Usuario + logout */}
-        <div className="border-t border-primary-dark p-4">
-          {sidebarOpen && user && (
-            <div className="mb-3">
-              <p className="text-white text-xs font-medium truncate">{user.full_name}</p>
-              <p className="text-white/50 text-xs capitalize">{user.role}</p>
-            </div>
+        {/* Usuario + perfil + logout */}
+        <div className={`border-t border-primary-dark p-4 space-y-2 ${collapsed ? 'flex flex-col items-center' : ''}`}>
+          {!collapsed && user && (
+            <p className="text-white text-xs font-medium truncate mb-2">{user.full_name}</p>
           )}
+          <NavLink
+            to={ROUTES.MY_SESSIONS}
+            title={collapsed ? 'Mis sesiones' : undefined}
+            className={({ isActive }) =>
+              `flex items-center gap-2 text-sm transition-colors ${
+                isActive ? 'text-white font-medium' : 'text-white/70 hover:text-white'
+              }`
+            }
+          >
+            <ShieldCheck className="w-4 h-4 flex-shrink-0" />
+            {!collapsed && <span>Mis sesiones</span>}
+          </NavLink>
           <button
             onClick={handleLogout}
+            title={collapsed ? 'Cerrar sesión' : undefined}
             className="flex items-center gap-2 text-white/70 hover:text-white text-sm transition-colors"
           >
             <LogOut className="w-4 h-4 flex-shrink-0" />
-            {sidebarOpen && <span>Cerrar sesión</span>}
+            {!collapsed && <span>Cerrar sesión</span>}
           </button>
         </div>
       </aside>

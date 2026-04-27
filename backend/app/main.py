@@ -50,6 +50,9 @@ async def lifespan(app: FastAPI):
     try:
         from app.jobs.missing_arqueo_job import schedule_job
         scheduler = schedule_job()
+        if scheduler:
+            from app.jobs.lock_expired_arqueos_job import schedule_lock_job
+            schedule_lock_job(scheduler)
     except Exception as exc:
         logger.warning("No se pudo iniciar el scheduler: %s", exc)
 

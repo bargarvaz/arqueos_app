@@ -84,6 +84,15 @@ async def upload_certificate(
     )
     existing = count_result.scalars().all()
     if len(existing) >= MAX_CERTIFICATES_PER_ARQUEO:
+        # Disparar notificación a los Admin (no bloquea la respuesta)
+        import asyncio as _asyncio
+        _asyncio.create_task(
+            _notify_excess_certificates_task(
+                header_id=header_id,
+                vault_id=header.vault_id,
+                user_id=user_id,
+            )
+        )
         raise BusinessRuleError(
             f"Se alcanzó el máximo de {MAX_CERTIFICATES_PER_ARQUEO} certificados por arqueo."
         )
@@ -160,6 +169,10 @@ async def get_certificate_download_url(
     """
     Genera una URL pre-firmada para descarga directa desde MinIO.
     Expira en 15 minutos.
+
+    Nota: el host de la URL apunta al endpoint configurado en el cliente MinIO,
+    que en Docker es `minio:9000` y no es accesible desde el browser. Para
+    descarga desde el frontend usa `stream_certificate` en su lugar.
     """
     cert = await db.get(Certificate, certificate_id)
     if not cert or not cert.is_active:
@@ -175,6 +188,37 @@ async def get_certificate_download_url(
     return url
 
 
+async def stream_certificate(
+    db: AsyncSession,
+    certificate_id: int,
+) -> tuple[bytes, str, str]:
+    """
+    Descarga el contenido del certificado desde MinIO y lo retorna en memoria
+    junto con su nombre de archivo y content_type. Pensado para servir el PDF
+    a través del backend (evita exponer el endpoint MinIO al browser).
+
+    Para PDFs >10MB sería preferible streaming chunked, pero el límite del
+    sistema es 10MB y MinIO get_object devuelve un response stream que el
+    caller puede iterar si lo necesita en el futuro.
+    """
+    cert = await db.get(Certificate, certificate_id)
+    if not cert or not cert.is_active:
+        raise NotFoundError("Certificado")
+
+    client = get_minio_client()
+    response = client.get_object(
+        bucket_name=cert.minio_bucket,
+        object_name=cert.minio_key,
+    )
+    try:
+        content = response.read()
+    finally:
+        response.close()
+        response.release_conn()
+
+    return content, cert.file_name, cert.content_type
+
+
 async def list_certificates(
     db: AsyncSession,
     header_id: int,
@@ -187,6 +231,21 @@ async def list_certificates(
         ).order_by(Certificate.uploaded_at.desc())
     )
     return list(result.scalars().all())
+
+
+async def _notify_excess_certificates_task(
+    header_id: int, vault_id: int, user_id: int
+) -> None:
+    """Tarea asíncrona: notifica a admin/operations cuando una ETV intenta el 11º PDF."""
+    try:
+        from app.database import AsyncSessionLocal
+        from app.notifications.service import notify_excess_certificates
+        async with AsyncSessionLocal() as db:
+            await notify_excess_certificates(
+                db, header_id=header_id, vault_id=vault_id, attempted_by=user_id
+            )
+    except Exception as exc:
+        logger.warning("No se pudo enviar notify_excess_certificates: %s", exc)
 
 
 async def delete_certificate(
