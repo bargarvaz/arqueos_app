@@ -84,6 +84,13 @@ class Empresa(Base):
     etv: Mapped["Company"] = relationship("Company", back_populates="empresas")
 
 
+class EtvSubrole(str, enum.Enum):
+    """Sub-rol dentro del rol etv. Permisos idénticos por ahora; queda preparado
+    para diferenciarlos a futuro."""
+    gerente = "gerente"
+    tesorero = "tesorero"
+
+
 class User(Base):
     """Usuarios del sistema (internos y ETVs)."""
 
@@ -108,6 +115,9 @@ class User(Base):
         Integer, ForeignKey("empresas.id"), nullable=True
     )
     puesto: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    etv_subrole: Mapped["EtvSubrole | None"] = mapped_column(
+        Enum(EtvSubrole, name="etv_subrole"), nullable=True
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     must_change_password: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False

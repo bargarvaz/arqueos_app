@@ -69,3 +69,31 @@ async def mark_all_as_read(
     current_user: User = Depends(get_current_user),
 ):
     await service.mark_all_as_read(db, current_user.id)
+
+
+@router.delete(
+    "/{notification_id}",
+    status_code=204,
+    summary="Eliminar una notificación propia",
+)
+async def delete_notification(
+    notification_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.common.exceptions import NotFoundError
+    ok = await service.delete_notification(db, notification_id, current_user.id)
+    if not ok:
+        raise NotFoundError("Notificación")
+
+
+@router.delete(
+    "",
+    summary="Eliminar todas las notificaciones del usuario",
+)
+async def delete_all_notifications(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    deleted = await service.delete_all_notifications(db, current_user.id)
+    return {"deleted": deleted}

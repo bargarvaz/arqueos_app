@@ -9,7 +9,21 @@ import reportService, {
   WeeklyTrendPoint,
   DenominationPoint,
 } from '@/services/reportService';
+import userService, { type Company } from '@/services/userService';
+import vaultService, { type Vault } from '@/services/vaultService';
 import { POLLING_INTERVAL_MS } from '@/utils/constants';
+
+type FilterMode = 'day' | 'month';
+
+function monthBounds(yearMonth: string): { date_from: string; date_to: string } {
+  // yearMonth = "2026-04"
+  const [y, m] = yearMonth.split('-').map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  return {
+    date_from: `${y}-${String(m).padStart(2, '0')}-01`,
+    date_to: `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`,
+  };
+}
 
 const formatMXN = (v: string | number) =>
   parseFloat(String(v)).toLocaleString('es-MX', { minimumFractionDigits: 2 });
@@ -54,13 +68,75 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // ─── Filtros que afectan TODOS los charts ─────────────────────────────────
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [vaults, setVaults] = useState<Vault[]>([]);
+  const [filterMode, setFilterMode] = useState<FilterMode>('day');
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  const [filterDate, setFilterDate] = useState<string>(today);
+  const [filterMonth, setFilterMonth] = useState<string>(today.slice(0, 7));
+  const [filterCompanyId, setFilterCompanyId] = useState<number | ''>('');
+  const [filterVaultId, setFilterVaultId] = useState<number | ''>('');
+
+  // Cargar catálogos una vez
+  useEffect(() => {
+    userService.listCompanies()
+      .then((cs) => setCompanies(cs.filter((c) => c.is_active)))
+      .catch(() => {});
+    vaultService.listVaults({ page: 1, page_size: 0 })
+      .then((p) => setVaults(p.items))
+      .catch(() => {});
+  }, []);
+
+  // Cuando cambia ETV, limpiar bóveda si no pertenece a esa ETV
+  useEffect(() => {
+    if (filterCompanyId === '' || filterVaultId === '') return;
+    const v = vaults.find((x) => x.id === filterVaultId);
+    if (v && v.company_id !== filterCompanyId) setFilterVaultId('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterCompanyId]);
+
+  const filteredVaults = filterCompanyId === ''
+    ? vaults
+    : vaults.filter((v) => v.company_id === filterCompanyId);
+
+  const buildFilters = (): {
+    target_date?: string;
+    date_from?: string;
+    date_to?: string;
+    company_id?: number;
+    vault_id?: number;
+  } => {
+    const base: Record<string, string | number | undefined> = {
+      company_id: filterCompanyId === '' ? undefined : filterCompanyId,
+      vault_id: filterVaultId === '' ? undefined : filterVaultId,
+    };
+    if (filterMode === 'month') {
+      const { date_from, date_to } = monthBounds(filterMonth);
+      base.date_from = date_from;
+      base.date_to = date_to;
+    } else {
+      base.target_date = filterDate || undefined;
+    }
+    return base;
+  };
+
   const load = (silent = false) => {
     if (!silent) setLoading(true);
+    const baseFilters = buildFilters();
+    const trendFilters = {
+      company_id: filterCompanyId === '' ? undefined : filterCompanyId,
+      vault_id: filterVaultId === '' ? undefined : filterVaultId,
+      end_date:
+        filterMode === 'month'
+          ? monthBounds(filterMonth).date_to
+          : filterDate || undefined,
+    };
     Promise.all([
-      reportService.getSummary(),
-      reportService.getMissingVaults(),
-      reportService.getWeeklyTrend(),
-      reportService.getDenominationDistribution(),
+      reportService.getSummary(baseFilters),
+      reportService.getMissingVaults(baseFilters),
+      reportService.getWeeklyTrend(trendFilters),
+      reportService.getDenominationDistribution(baseFilters),
     ])
       .then(([s, m, t, d]) => {
         setSummary(s);
@@ -75,13 +151,18 @@ export default function Dashboard() {
       });
   };
 
+  // Recargar cuando cambia algún filtro
   useEffect(() => {
     load();
-    // Refresco silencioso cada 30 minutos para mantener métricas actualizadas
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterMode, filterDate, filterMonth, filterCompanyId, filterVaultId]);
+
+  useEffect(() => {
+    // Refresco silencioso cada 30 minutos respetando los filtros actuales
     const interval = setInterval(() => load(true), POLLING_INTERVAL_MS);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [filterMode, filterDate, filterMonth, filterCompanyId, filterVaultId]);
 
   if (loading) {
     return (
@@ -116,19 +197,130 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-xl font-semibold text-text-primary">Dashboard</h1>
-          <p className="text-sm text-text-muted">
-            {new Date().toLocaleDateString('es-MX', {
-              weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-            })}
-          </p>
+      {/* Header con filtros */}
+      <div className="space-y-3">
+        <div className="flex flex-wrap justify-between items-end gap-3">
+          <div>
+            <h1 className="text-xl font-semibold text-text-primary">Dashboard</h1>
+            <p className="text-sm text-text-muted">
+              {filterMode === 'day'
+                ? filterDate
+                  ? new Date(filterDate + 'T12:00:00').toLocaleDateString('es-MX', {
+                      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+                    })
+                  : 'Selecciona una fecha'
+                : new Date(filterMonth + '-15T12:00:00').toLocaleDateString('es-MX', {
+                    month: 'long', year: 'numeric',
+                  })}
+            </p>
+          </div>
+          <button onClick={() => load()} className="btn btn-outline text-sm">
+            Actualizar
+          </button>
         </div>
-        <button onClick={() => load()} className="btn btn-outline text-sm">
-          Actualizar
-        </button>
+
+        <div className="card p-3 flex flex-wrap items-end gap-2">
+          {/* Toggle día/mes */}
+          <div className="inline-flex rounded border border-border overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setFilterMode('day')}
+              className={`px-3 py-1.5 text-xs ${
+                filterMode === 'day'
+                  ? 'bg-primary text-white'
+                  : 'bg-white text-text-secondary hover:bg-surface'
+              }`}
+            >
+              Día
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterMode('month')}
+              className={`px-3 py-1.5 text-xs ${
+                filterMode === 'month'
+                  ? 'bg-primary text-white'
+                  : 'bg-white text-text-secondary hover:bg-surface'
+              }`}
+            >
+              Mes
+            </button>
+          </div>
+
+          {filterMode === 'day' ? (
+            <div>
+              <label className="text-xs text-text-muted block mb-1">Fecha</label>
+              <input
+                type="date"
+                value={filterDate}
+                onChange={(e) => setFilterDate(e.target.value)}
+                className="input text-sm w-40"
+              />
+            </div>
+          ) : (
+            <div>
+              <label className="text-xs text-text-muted block mb-1">Mes</label>
+              <input
+                type="month"
+                value={filterMonth}
+                onChange={(e) => setFilterMonth(e.target.value)}
+                className="input text-sm w-40"
+              />
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs text-text-muted block mb-1">ETV</label>
+            <select
+              value={filterCompanyId}
+              onChange={(e) =>
+                setFilterCompanyId(e.target.value === '' ? '' : Number(e.target.value))
+              }
+              className="input text-sm w-44"
+            >
+              <option value="">Todas</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs text-text-muted block mb-1">Bóveda</label>
+            <select
+              value={filterVaultId}
+              onChange={(e) =>
+                setFilterVaultId(e.target.value === '' ? '' : Number(e.target.value))
+              }
+              className="input text-sm w-52"
+              disabled={filteredVaults.length === 0}
+            >
+              <option value="">Todas</option>
+              {filteredVaults.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.vault_code} — {v.vault_name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {(filterCompanyId !== '' ||
+            filterVaultId !== '' ||
+            filterMode !== 'day' ||
+            filterDate !== today) && (
+            <button
+              onClick={() => {
+                setFilterCompanyId('');
+                setFilterVaultId('');
+                setFilterMode('day');
+                setFilterDate(today);
+                setFilterMonth(today.slice(0, 7));
+              }}
+              className="btn btn-ghost text-xs"
+            >
+              Limpiar filtros
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Cards de métricas */}

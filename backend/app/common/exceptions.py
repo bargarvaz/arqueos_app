@@ -62,13 +62,28 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def validation_error_handler(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
+        # Limpieza: ignorar la primera parte de loc (body/query/path) que el usuario
+        # no necesita ver, y construir un mensaje legible por campo.
         errors = []
         for error in exc.errors():
-            field = " → ".join(str(loc) for loc in error["loc"])
+            loc = list(error["loc"])
+            if loc and loc[0] in ("body", "query", "path", "header"):
+                loc = loc[1:]
+            field = ".".join(str(p) for p in loc) or "campo"
             errors.append({"field": field, "message": error["msg"]})
+
+        # Detail concatenado para que clientes que solo leen `detail` (la mayoría)
+        # vean el mensaje útil en español.
+        if errors:
+            detail = "Error de validación: " + "; ".join(
+                f"{e['field']} → {e['message']}" for e in errors
+            )
+        else:
+            detail = "Error de validación."
+
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={"detail": "Error de validación.", "errors": errors},
+            content={"detail": detail, "errors": errors},
         )
 
     @app.exception_handler(Exception)

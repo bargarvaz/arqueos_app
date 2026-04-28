@@ -1,6 +1,6 @@
 // Reportes de error — vista ETV (solo responder)
 import { useState, useEffect, useCallback } from 'react';
-import { Send } from 'lucide-react';
+import { Send, ChevronDown, ChevronRight, Vault as VaultIcon, Calendar, User as UserIcon } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -91,6 +91,18 @@ export default function EtvErrorReports() {
   const [statusFilter, setStatusFilter] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [respondingTo, setRespondingTo] = useState<ErrorReport | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+
+  const toggleExpand = (id: number) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const formatMXN = (v: string | number) =>
+    parseFloat(String(v) || '0').toLocaleString('es-MX', { minimumFractionDigits: 2 });
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -141,49 +153,132 @@ export default function EtvErrorReports() {
         </div>
       ) : (
         <div className="space-y-3">
-          {reports.map((r) => (
-            <div key={r.id} className="card">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="text-xs font-mono text-text-muted">#{r.id}</span>
-                    <span className={`text-xs ${STATUS_BADGE[r.status] ?? 'badge-neutral'}`}>
-                      {STATUS_LABELS[r.status] ?? r.status}
+          {reports.map((r) => {
+            const expanded = expandedIds.has(r.id);
+            return (
+              <div key={r.id} className="card p-0 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => toggleExpand(r.id)}
+                  className="w-full text-left p-4 hover:bg-surface/40 transition-colors"
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 text-text-muted">
+                      {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                     </span>
-                    {r.arqueo_header_id && (
-                      <span className="text-xs text-text-muted">Arqueo #{r.arqueo_header_id}</span>
-                    )}
-                    <span className="text-xs text-text-muted ml-auto">{formatDatetime(r.created_at)}</span>
-                  </div>
-
-                  <div className="bg-surface rounded p-3 border border-border mb-2">
-                    <p className="text-xs font-semibold text-text-secondary mb-1">Error reportado</p>
-                    <p className="text-sm text-text-primary">{r.description}</p>
-                  </div>
-
-                  {r.response && (
-                    <div className="bg-primary/5 rounded p-3 border border-primary/20">
-                      <p className="text-xs font-semibold text-primary mb-1">Tu respuesta</p>
-                      <p className="text-sm text-text-primary">{r.response}</p>
-                      {r.resolved_at && (
-                        <p className="text-xs text-text-muted mt-1">Resuelto: {formatDatetime(r.resolved_at)}</p>
-                      )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3 flex-wrap mb-1">
+                        <span className="text-xs font-mono text-text-muted">#{r.id}</span>
+                        <span className={`text-xs ${STATUS_BADGE[r.status] ?? 'badge-neutral'}`}>
+                          {STATUS_LABELS[r.status] ?? r.status}
+                        </span>
+                        {r.vault_code && (
+                          <span className="text-xs flex items-center gap-1 text-text-secondary">
+                            <VaultIcon className="w-3 h-3" />
+                            <span className="font-mono">{r.vault_code}</span>
+                            {r.vault_name && <span className="text-text-muted">— {r.vault_name}</span>}
+                          </span>
+                        )}
+                        {r.arqueo_date && (
+                          <span className="text-xs flex items-center gap-1 text-text-muted">
+                            <Calendar className="w-3 h-3" />
+                            {new Date(r.arqueo_date + 'T12:00:00').toLocaleDateString('es-MX')}
+                          </span>
+                        )}
+                        <span className="text-xs text-text-muted ml-auto">{formatDatetime(r.created_at)}</span>
+                      </div>
+                      <p className="text-sm text-text-primary line-clamp-2">{r.description}</p>
                     </div>
-                  )}
-                </div>
+                  </div>
+                </button>
 
-                {canRespond(r) && !r.response && (
-                  <button
-                    onClick={() => setRespondingTo(r)}
-                    className="flex items-center gap-1 text-xs text-primary hover:bg-primary/10 px-3 py-1.5 rounded flex-shrink-0"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    Responder
-                  </button>
+                {expanded && (
+                  <div className="px-5 pb-5 space-y-3 border-t border-border/50 bg-surface/20">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                      <div className="text-xs">
+                        <p className="text-text-muted mb-0.5 flex items-center gap-1">
+                          <UserIcon className="w-3 h-3" /> Reportado por
+                        </p>
+                        <p className="text-text-primary font-medium">
+                          {r.reported_by_name ?? `Usuario #${r.reported_by}`}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-text-muted mb-1">Descripción del error</p>
+                      <p className="text-sm text-text-primary whitespace-pre-wrap">{r.description}</p>
+                    </div>
+
+                    {r.records.length > 0 && (
+                      <div>
+                        <p className="text-xs text-text-muted mb-2">
+                          Registros que debes corregir ({r.records.length})
+                        </p>
+                        <div className="border border-border rounded overflow-hidden">
+                          <table className="w-full text-xs">
+                            <thead className="bg-surface">
+                              <tr className="text-left text-text-muted">
+                                <th className="px-3 py-1.5">UID</th>
+                                <th className="px-3 py-1.5">Comprobante</th>
+                                <th className="px-3 py-1.5">Referencia</th>
+                                <th className="px-3 py-1.5">Sucursal</th>
+                                <th className="px-3 py-1.5">Tipo</th>
+                                <th className="px-3 py-1.5 text-right">Entradas</th>
+                                <th className="px-3 py-1.5 text-right">Salidas</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {r.records.map((rec) => (
+                                <tr key={rec.id} className="border-t border-border/40 bg-white">
+                                  <td className="px-3 py-1.5 font-mono text-text-muted">{rec.record_uid}</td>
+                                  <td className="px-3 py-1.5">{rec.voucher}</td>
+                                  <td className="px-3 py-1.5 text-text-muted">{rec.reference}</td>
+                                  <td className="px-3 py-1.5 text-text-muted">{rec.sucursal_name ?? '—'}</td>
+                                  <td className="px-3 py-1.5 text-text-muted">{rec.movement_type_name ?? '—'}</td>
+                                  <td className="px-3 py-1.5 text-right font-mono text-success">
+                                    {parseFloat(rec.entries) > 0 ? `$${formatMXN(rec.entries)}` : '—'}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right font-mono text-error">
+                                    {parseFloat(rec.withdrawals) > 0 ? `$${formatMXN(rec.withdrawals)}` : '—'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <p className="text-[11px] text-text-muted mt-1">
+                          Usa el módulo <span className="font-medium">Modificaciones</span> para corregir estos registros.
+                        </p>
+                      </div>
+                    )}
+
+                    {r.response && (
+                      <div className="bg-primary/5 rounded p-3 border border-primary/20">
+                        <p className="text-xs font-semibold text-primary mb-1">Tu respuesta</p>
+                        <p className="text-sm text-text-primary whitespace-pre-wrap">{r.response}</p>
+                        {r.resolved_at && (
+                          <p className="text-xs text-text-muted mt-1">Resuelto: {formatDatetime(r.resolved_at)}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {canRespond(r) && !r.response && (
+                      <div className="flex justify-end">
+                        <button
+                          onClick={() => setRespondingTo(r)}
+                          className="btn btn-primary text-xs flex items-center gap-1"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          Responder reporte
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

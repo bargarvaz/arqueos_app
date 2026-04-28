@@ -106,6 +106,25 @@ async def _get_or_create_branch(db: AsyncSession, name: str) -> Branch:
     return branch
 
 
+_DENOMINATION_FIELDS = [
+    "initial_bill_1000", "initial_bill_500", "initial_bill_200",
+    "initial_bill_100", "initial_bill_50", "initial_bill_20",
+    "initial_coin_100", "initial_coin_50", "initial_coin_20",
+    "initial_coin_10", "initial_coin_5", "initial_coin_2",
+    "initial_coin_1", "initial_coin_050", "initial_coin_020", "initial_coin_010",
+]
+
+
+def _denominations_total(denoms: dict[str, Decimal] | None) -> Decimal:
+    """Suma los valores monetarios de las denominaciones iniciales."""
+    if not denoms:
+        return Decimal("0")
+    return sum(
+        (Decimal(str(denoms.get(f, 0) or 0)) for f in _DENOMINATION_FIELDS),
+        start=Decimal("0"),
+    )
+
+
 async def create_vault(
     db: AsyncSession,
     *,
@@ -115,7 +134,7 @@ async def create_vault(
     empresa_id: int | None,
     manager_id: int | None,
     treasurer_id: int | None,
-    initial_balance: Decimal,
+    initial_denominations: dict[str, Decimal] | None,
     admin_user_id: int,
     ip_address: str | None = None,
     user_agent: str | None = None,
@@ -128,6 +147,12 @@ async def create_vault(
     # Branch se resuelve automáticamente desde vault_code
     branch = await _get_or_create_branch(db, vault_code)
 
+    initial_balance = _denominations_total(initial_denominations)
+    denom_kwargs = {
+        f: Decimal(str((initial_denominations or {}).get(f, 0) or 0))
+        for f in _DENOMINATION_FIELDS
+    }
+
     vault = Vault(
         vault_code=vault_code,
         vault_name=vault_name,
@@ -138,6 +163,7 @@ async def create_vault(
         treasurer_id=treasurer_id,
         initial_balance=initial_balance,
         is_active=True,
+        **denom_kwargs,
     )
     db.add(vault)
     await db.flush()
@@ -152,6 +178,46 @@ async def create_vault(
             "vault_code": vault_code,
             "vault_name": vault_name,
             "initial_balance": str(initial_balance),
+            "initial_denominations": {k: str(v) for k, v in denom_kwargs.items() if v},
+        },
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+    await db.commit()
+    await db.refresh(vault)
+    return vault
+
+
+async def update_vault_denominations(
+    db: AsyncSession,
+    vault_id: int,
+    denominations: dict[str, Decimal],
+    admin_user_id: int,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+) -> Vault:
+    """Actualiza las denominaciones iniciales y el initial_balance derivado."""
+    vault = await get_vault(db, vault_id)
+    old = {f: getattr(vault, f) for f in _DENOMINATION_FIELDS}
+    old["initial_balance"] = vault.initial_balance
+
+    for f in _DENOMINATION_FIELDS:
+        if f in denominations:
+            setattr(vault, f, Decimal(str(denominations[f] or 0)))
+    vault.initial_balance = sum(
+        (getattr(vault, f) for f in _DENOMINATION_FIELDS), start=Decimal("0")
+    )
+
+    await log_action(
+        db,
+        user_id=admin_user_id,
+        action="update",
+        entity_type="vault",
+        entity_id=vault_id,
+        old_values={k: str(v) for k, v in old.items()},
+        new_values={
+            **{f: str(getattr(vault, f)) for f in _DENOMINATION_FIELDS},
+            "initial_balance": str(vault.initial_balance),
         },
         ip_address=ip_address,
         user_agent=user_agent,
@@ -298,18 +364,30 @@ async def deactivate_vault(
 async def reactivate_vault(
     db: AsyncSession,
     vault_id: int,
-    initial_balance: Decimal,
+    initial_balance: Decimal | None,
+    initial_denominations: dict[str, Decimal] | None,
     admin_user_id: int,
     ip_address: str | None = None,
     user_agent: str | None = None,
 ) -> Vault:
-    """Reactiva una bóveda y establece su nuevo saldo inicial."""
+    """
+    Reactiva una bóveda y establece su nuevo saldo inicial.
+    Modo preferido: pasar `initial_denominations` (initial_balance se calcula).
+    """
     vault = await get_vault(db, vault_id)
     if vault.is_active:
         raise ConflictError("La bóveda ya está activa.")
 
+    if initial_denominations is not None:
+        for f in _DENOMINATION_FIELDS:
+            setattr(vault, f, Decimal(str(initial_denominations.get(f, 0) or 0)))
+        vault.initial_balance = sum(
+            (getattr(vault, f) for f in _DENOMINATION_FIELDS), start=Decimal("0")
+        )
+    else:
+        vault.initial_balance = initial_balance or Decimal("0")
+
     vault.is_active = True
-    vault.initial_balance = initial_balance
     vault.reactivated_at = datetime.now(timezone.utc)
 
     await log_action(
@@ -319,7 +397,7 @@ async def reactivate_vault(
         entity_type="vault",
         entity_id=vault_id,
         old_values={"is_active": False},
-        new_values={"is_active": True, "initial_balance": str(initial_balance)},
+        new_values={"is_active": True, "initial_balance": str(vault.initial_balance)},
         ip_address=ip_address,
         user_agent=user_agent,
     )
@@ -347,15 +425,26 @@ async def _notify_reactivation_task(vault_id: int) -> None:
 async def set_initial_balance(
     db: AsyncSession,
     vault_id: int,
-    initial_balance: Decimal,
+    initial_balance: Decimal | None,
+    initial_denominations: dict[str, Decimal] | None,
     admin_user_id: int,
     ip_address: str | None = None,
     user_agent: str | None = None,
 ) -> Vault:
-    """Establece o actualiza el saldo inicial de una bóveda (solo Admin)."""
+    """
+    Establece el saldo inicial. Modo preferido: pasar `initial_denominations` y
+    el total se calcula desde ellas. `initial_balance` solo válido cuando todas
+    las denominaciones son 0 (modo legacy "sin migrar").
+    """
+    if initial_denominations is not None:
+        return await update_vault_denominations(
+            db, vault_id, initial_denominations, admin_user_id, ip_address, user_agent
+        )
+
     vault = await get_vault(db, vault_id)
     old_balance = vault.initial_balance
-    vault.initial_balance = initial_balance
+    vault.initial_balance = initial_balance or Decimal("0")
+    # Modo legacy: dejamos las denominaciones como están (en 0 = "sin migrar")
 
     await log_action(
         db,
@@ -364,7 +453,7 @@ async def set_initial_balance(
         entity_type="vault",
         entity_id=vault_id,
         old_values={"initial_balance": str(old_balance)},
-        new_values={"initial_balance": str(initial_balance)},
+        new_values={"initial_balance": str(vault.initial_balance)},
         ip_address=ip_address,
         user_agent=user_agent,
     )

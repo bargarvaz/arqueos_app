@@ -181,7 +181,22 @@ async def get_or_create_header(
 
 
 async def get_header(db: AsyncSession, header_id: int) -> ArqueoHeader:
-    header = await db.get(ArqueoHeader, header_id)
+    """
+    Carga el header con sus records activos eager-loaded.
+
+    Importante usar selectinload aquí: db.get() retorna el header pero la
+    relationship `records` (lazy='selectin') no siempre se hidrata en contexto
+    async, lo que causaba que el frontend recibiera `records: []` aunque la BD
+    tuviera registros activos.
+    """
+    from sqlalchemy.orm import selectinload
+
+    result = await db.execute(
+        select(ArqueoHeader)
+        .options(selectinload(ArqueoHeader.records))
+        .where(ArqueoHeader.id == header_id)
+    )
+    header = result.scalar_one_or_none()
     if not header:
         raise NotFoundError("Arqueo")
     return header
@@ -346,6 +361,26 @@ async def publish_arqueo(
         validate_record(rd)
         valid_records_data.append(rd)
 
+    # 4.5. Validar inventario por denominación intra-día (orden de captura)
+    inventory_start = await get_denomination_inventory(db, vault_id, arqueo_date)
+    issues = validate_denomination_balance(
+        inventory_start, valid_records_data, intraday=True,
+    )
+    if issues:
+        # En intraday todos los issues son del mismo paso (mismo row)
+        row = issues[0].get("row")
+        details = ", ".join(
+            f"{i['denomination']} (disponible ${i['available']}, faltan ${i['deficit']})"
+            for i in issues
+        )
+        from app.common.exceptions import ValidationAppError
+        prefix = f"Fila {row}: " if row else ""
+        raise ValidationAppError(
+            f"{prefix}no hay suficientes denominaciones para esa salida — {details}. "
+            "Reordena los movimientos para que las entradas ocurran antes que las salidas, "
+            "o ajusta las denominaciones."
+        )
+
     # 5. Desactivar registros existentes del día (solo actuales, sin contrapartida)
     existing = await db.execute(
         select(ArqueoRecord).where(
@@ -381,11 +416,17 @@ async def publish_arqueo(
         else:
             # Nuevo registro
             new_uid = await generate_unique_uid(db, ArqueoRecord, "record_uid")
+            # Aplicar coerción de tipos a los campos del payload
+            coerced = {
+                k: _coerce_field_value(k, v)
+                for k, v in rd.items()
+                if k != "record_uid"
+            }
             rec = ArqueoRecord(
                 record_uid=new_uid,
                 arqueo_header_id=header.id,
                 created_by=user_id,
-                **{k: v for k, v in rd.items() if k != "record_uid"},
+                **coerced,
             )
             db.add(rec)
             await db.flush()
@@ -607,6 +648,172 @@ async def ensure_blank_headers_for_range(
     return created_ids
 
 
+# ─── Inventario por denominación ─────────────────────────────────────────────
+
+DENOMINATION_FIELDS = [
+    "bill_1000", "bill_500", "bill_200",
+    "bill_100", "bill_50", "bill_20",
+    "coin_100", "coin_50", "coin_20",
+    "coin_10", "coin_5", "coin_2",
+    "coin_1", "coin_050", "coin_020", "coin_010",
+]
+
+
+def _initial_denomination_field(record_field: str) -> str:
+    """Mapea bill_1000 → initial_bill_1000."""
+    return f"initial_{record_field}"
+
+
+async def get_denomination_inventory(
+    db: AsyncSession,
+    vault_id: int,
+    before_date: date,
+) -> dict[str, Decimal]:
+    """
+    Inventario de la bóveda por denominación al inicio de `before_date`.
+
+    Para cada denominación: initial_<denom> + Σ(entries en records activos no
+    contrapartida con arqueo_date < before_date) - Σ(withdrawals).
+
+    Si la bóveda está "sin migrar" (initial_balance > 0 pero todas las
+    initial_<denom> son 0), retorna un dict con None para cada denominación,
+    señalando al caller que la validación debe relajarse.
+    """
+    from app.vaults.models import Vault
+
+    vault = await db.get(Vault, vault_id)
+    if not vault:
+        return {f: Decimal("0") for f in DENOMINATION_FIELDS}
+
+    initial = {
+        f: Decimal(str(getattr(vault, _initial_denomination_field(f)) or 0))
+        for f in DENOMINATION_FIELDS
+    }
+    is_unmigrated = (
+        Decimal(str(vault.initial_balance or 0)) > 0
+        and all(v == 0 for v in initial.values())
+    )
+    if is_unmigrated:
+        # Marcador: caller no debe validar
+        return {f: None for f in DENOMINATION_FIELDS}
+
+    # Sumar registros activos no-contrapartida hasta before_date (exclusive)
+    inventory = dict(initial)
+
+    record_cols = [getattr(ArqueoRecord, f) for f in DENOMINATION_FIELDS]
+    rows = await db.execute(
+        select(
+            ArqueoRecord.entries,
+            ArqueoRecord.withdrawals,
+            *record_cols,
+        )
+        .join(ArqueoHeader, ArqueoHeader.id == ArqueoRecord.arqueo_header_id)
+        .where(
+            ArqueoHeader.vault_id == vault_id,
+            ArqueoHeader.arqueo_date < before_date,
+            ArqueoHeader.status != ArqueoStatus.draft,
+            ArqueoRecord.is_active == True,
+            ArqueoRecord.is_counterpart == False,
+        )
+    )
+
+    for row in rows.all():
+        entries = Decimal(str(row[0] or 0))
+        # row[2:] son las denominaciones en el orden de DENOMINATION_FIELDS
+        sign = Decimal("1") if entries > 0 else Decimal("-1")
+        for i, field in enumerate(DENOMINATION_FIELDS):
+            value = Decimal(str(row[2 + i] or 0))
+            inventory[field] += sign * value
+
+    return inventory
+
+
+DENOM_LABELS = {
+    "bill_1000": "billete $1,000", "bill_500": "billete $500",
+    "bill_200": "billete $200", "bill_100": "billete $100",
+    "bill_50": "billete $50", "bill_20": "billete $20",
+    "coin_100": "moneda $100", "coin_50": "moneda $50",
+    "coin_20": "moneda $20", "coin_10": "moneda $10",
+    "coin_5": "moneda $5", "coin_2": "moneda $2",
+    "coin_1": "moneda $1", "coin_050": "moneda $0.50",
+    "coin_020": "moneda $0.20", "coin_010": "moneda $0.10",
+}
+
+
+def _record_entry_amount(r: dict | ArqueoRecord) -> Decimal:
+    if isinstance(r, dict):
+        return Decimal(str(r.get("entries", 0) or 0))
+    return Decimal(str(r.entries or 0))
+
+
+def _record_denom(r: dict | ArqueoRecord, field: str) -> Decimal:
+    if isinstance(r, dict):
+        return Decimal(str(r.get(field, 0) or 0))
+    return Decimal(str(getattr(r, field, 0) or 0))
+
+
+def validate_denomination_balance(
+    inventory_start: dict[str, Decimal | None],
+    records: list[dict] | list[ArqueoRecord],
+    intraday: bool = False,
+) -> list[dict]:
+    """
+    Valida que aplicando los movimientos `records` sobre `inventory_start` ninguna
+    denominación quede negativa.
+
+    - intraday=False: revisa el balance al final (cierre del día). Reporta TODAS
+      las denominaciones que terminan en negativo.
+    - intraday=True: revisa paso a paso en el orden de la lista. Reporta el
+      PRIMER registro donde alguna denominación queda en negativo, indicando
+      el índice (1-based) y la denominación violatoria.
+
+    Retorna lista de dicts:
+      - {"row": int|None, "denomination": str, "available": Decimal, "deficit": Decimal}
+      - Lista vacía = válido.
+
+    Si inventory_start tiene None (bóveda "sin migrar"), retorna [] sin validar.
+    """
+    if any(v is None for v in inventory_start.values()):
+        return []
+
+    state = {f: Decimal(str(v or 0)) for f, v in inventory_start.items()}
+
+    if intraday:
+        for ix, r in enumerate(records, start=1):
+            entry_amt = _record_entry_amount(r)
+            sign = Decimal("1") if entry_amt > 0 else Decimal("-1")
+            issues_this_step = []
+            for f in DENOMINATION_FIELDS:
+                state[f] += sign * _record_denom(r, f)
+                if state[f] < 0:
+                    issues_this_step.append({
+                        "row": ix,
+                        "denomination": DENOM_LABELS[f],
+                        "available": state[f] - sign * _record_denom(r, f),  # antes del paso
+                        "deficit": -state[f],
+                    })
+            if issues_this_step:
+                return issues_this_step
+        return []
+
+    # Validación al cierre
+    for r in records:
+        sign = Decimal("1") if _record_entry_amount(r) > 0 else Decimal("-1")
+        for f in DENOMINATION_FIELDS:
+            state[f] += sign * _record_denom(r, f)
+
+    return [
+        {
+            "row": None,
+            "denomination": DENOM_LABELS[f],
+            "available": inventory_start[f],
+            "deficit": -state[f],
+        }
+        for f in DENOMINATION_FIELDS
+        if state[f] < 0
+    ]
+
+
 def _record_snapshot(record: ArqueoRecord) -> dict:
     """Genera un snapshot JSONB del registro para el audit log."""
     return {
@@ -620,6 +827,31 @@ def _record_snapshot(record: ArqueoRecord) -> dict:
     }
 
 
+_INT_FIELDS = {"sucursal_id", "movement_type_id"}
+_DATE_FIELDS = {"record_date"}
+
+
+def _coerce_field_value(field: str, value: Any) -> Any:
+    """Coerciona valores que vienen como string del frontend al tipo de la columna."""
+    if field in _INT_FIELDS:
+        if value is None or value == "" or value == 0 or value == "0":
+            return None if field == "sucursal_id" else value  # movement_type_id requerido
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return value
+    if field in _DATE_FIELDS:
+        if isinstance(value, date):
+            return value
+        if value is None or value == "":
+            return None
+        try:
+            return date.fromisoformat(str(value)[:10])
+        except (ValueError, TypeError):
+            return value
+    return value
+
+
 def _apply_record_data(record: ArqueoRecord, data: dict[str, Any]) -> None:
     """Aplica los datos del request al modelo de registro."""
     fields = [
@@ -629,4 +861,4 @@ def _apply_record_data(record: ArqueoRecord, data: dict[str, Any]) -> None:
 
     for field in fields:
         if field in data:
-            setattr(record, field, data[field])
+            setattr(record, field, _coerce_field_value(field, data[field]))

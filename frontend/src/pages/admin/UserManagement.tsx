@@ -16,15 +16,23 @@ import userService, {
 import vaultService, { type Vault as VaultType } from '@/services/vaultService';
 import { formatUserRole } from '@/utils/formatters';
 import { getErrorMessage } from '@/services/api';
+import BulkImportModal from '@/components/bulk/BulkImportModal';
+import { Upload } from 'lucide-react';
 
-const createSchema = z.object({
-  email: z.string().email('Email inválido.'),
-  full_name: z.string().min(2, 'Nombre requerido.'),
-  role: z.enum(['admin', 'operations', 'data_science', 'etv']),
-  puesto: z.string().optional(),
-  company_id: z.number().nullable().optional(),
-  empresa_id: z.number().nullable().optional(),
-});
+const createSchema = z
+  .object({
+    email: z.string().email('Email inválido.'),
+    full_name: z.string().min(2, 'Nombre requerido.'),
+    role: z.enum(['admin', 'operations', 'data_science', 'etv']),
+    etv_subrole: z.enum(['gerente', 'tesorero']).optional(),
+    puesto: z.string().optional(),
+    company_id: z.number().nullable().optional(),
+    empresa_id: z.number().nullable().optional(),
+  })
+  .refine(
+    (d) => d.role !== 'etv' || !!d.etv_subrole,
+    { message: 'Selecciona Gerente o Tesorero.', path: ['etv_subrole'] },
+  );
 
 type CreateForm = z.infer<typeof createSchema>;
 
@@ -54,6 +62,7 @@ export default function UserManagement() {
   const [createError, setCreateError] = useState('');
   const [tempPassword, setTempPassword] = useState('');
   const [createVaults, setCreateVaults] = useState<number[]>([]);
+  const [showBulkImport, setShowBulkImport] = useState(false);
 
   // Editar bóvedas
   const [vaultModalUser, setVaultModalUser] = useState<UserDetailResponse | null>(null);
@@ -180,6 +189,7 @@ export default function UserManagement() {
         email: data.email,
         full_name: data.full_name,
         role: data.role,
+        etv_subrole: data.role === 'etv' ? data.etv_subrole ?? null : null,
         puesto: data.puesto || null,
         company_id: data.role === 'etv' ? data.company_id ?? null : null,
         empresa_id: data.role === 'etv' ? data.empresa_id ?? null : null,
@@ -223,9 +233,19 @@ export default function UserManagement() {
     {
       accessorKey: 'role',
       header: 'Rol',
-      cell: ({ getValue }) => (
-        <span className="badge-neutral">{formatUserRole(String(getValue()))}</span>
-      ),
+      cell: ({ row }) => {
+        const u = row.original;
+        return (
+          <div className="flex flex-col items-start gap-0.5">
+            <span className="badge-neutral">{formatUserRole(u.role)}</span>
+            {u.etv_subrole && (
+              <span className="text-[10px] text-text-muted capitalize">
+                {u.etv_subrole}
+              </span>
+            )}
+          </div>
+        );
+      },
     },
     {
       accessorKey: 'is_active',
@@ -292,13 +312,22 @@ export default function UserManagement() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-semibold text-text-primary">Gestión de Usuarios</h1>
-        <button
-          onClick={() => { setShowCreateModal(true); loadVaults(); }}
-          className="btn-primary flex items-center gap-2"
-        >
-          <UserPlus className="w-4 h-4" />
-          Nuevo usuario
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowBulkImport(true)}
+            className="btn-outline flex items-center gap-2"
+          >
+            <Upload className="w-4 h-4" />
+            Carga masiva
+          </button>
+          <button
+            onClick={() => { setShowCreateModal(true); loadVaults(); }}
+            className="btn-primary flex items-center gap-2"
+          >
+            <UserPlus className="w-4 h-4" />
+            Nuevo usuario
+          </button>
+        </div>
       </div>
 
       {/* Filtros */}
@@ -375,7 +404,10 @@ export default function UserManagement() {
                   </div>
                   <div>
                     <label className="label">Rol</label>
-                    <select className="input" {...register('role')}>
+                    <select
+                      className={errors.role ? 'input-error' : 'input'}
+                      {...register('role')}
+                    >
                       <option value="">Seleccionar...</option>
                       {ROLE_OPTIONS.map(r => (
                         <option key={r.value} value={r.value}>{r.label}</option>
@@ -384,14 +416,37 @@ export default function UserManagement() {
                     {errors.role && <p className="text-status-error text-xs mt-1">{errors.role.message}</p>}
                   </div>
                   <div>
-                    <label className="label">Tipo de usuario</label>
-                    <input
-                      type="text"
-                      readOnly
-                      className="input bg-surface text-text-muted cursor-default"
-                      value={watchRole ? getUserTypeLabel(watchRole) : '—'}
-                    />
-                    <p className="text-text-muted text-xs mt-1">Auto por rol</p>
+                    <label className="label">
+                      {watchRole === 'etv' ? 'Sub-rol ETV' : 'Tipo de usuario'}
+                      {watchRole === 'etv' && <span className="text-status-error"> *</span>}
+                    </label>
+                    {watchRole === 'etv' ? (
+                      <>
+                        <select
+                          className={errors.etv_subrole ? 'input-error' : 'input'}
+                          {...register('etv_subrole')}
+                        >
+                          <option value="">Seleccionar...</option>
+                          <option value="gerente">Gerente</option>
+                          <option value="tesorero">Tesorero</option>
+                        </select>
+                        {errors.etv_subrole && (
+                          <p className="text-status-error text-xs mt-1">
+                            {errors.etv_subrole.message}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <input
+                          type="text"
+                          readOnly
+                          className="input bg-surface text-text-muted cursor-default"
+                          value={watchRole ? getUserTypeLabel(watchRole) : '—'}
+                        />
+                        <p className="text-text-muted text-xs mt-1">Auto por rol</p>
+                      </>
+                    )}
                   </div>
                   <div className="col-span-2">
                     <label className="label">Puesto</label>
@@ -522,6 +577,33 @@ export default function UserManagement() {
             </div>
           </div>
         </div>
+      )}
+
+      {showBulkImport && (
+        <BulkImportModal
+          title="Carga masiva de usuarios"
+          endpoint="/users/bulk-import"
+          templateFilename="usuarios_template.csv"
+          renderRowSummary={(item) => (
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+              <span className="font-medium">{String(item.email ?? '')}</span>
+              <span className="text-text-muted">{String(item.full_name ?? '')}</span>
+              <span className="badge-neutral text-[10px]">{String(item.role ?? '')}</span>
+              {Boolean(item.etv_subrole) && (
+                <span className="badge-neutral text-[10px] capitalize">
+                  {String(item.etv_subrole)}
+                </span>
+              )}
+              {Boolean(item.company_name) && (
+                <span className="text-text-muted text-[11px]">
+                  ETV: {String(item.company_name)}
+                </span>
+              )}
+            </div>
+          )}
+          onClose={() => setShowBulkImport(false)}
+          onSuccess={load}
+        />
       )}
     </div>
   );

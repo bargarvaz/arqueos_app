@@ -4,6 +4,7 @@ import api from './api';
 export interface ExplorerRecord {
   record_id: number;
   record_uid: string;
+  arqueo_header_id: number;
   arqueo_date: string;
   vault_id: number;
   vault_code: string;

@@ -94,6 +94,24 @@ class Vault(Base):
     initial_balance: Mapped[float] = mapped_column(
         Numeric(15, 2), nullable=False, default=0
     )
+    # Denominaciones del saldo inicial (suma debe igualar initial_balance)
+    initial_bill_1000: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+    initial_bill_500: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+    initial_bill_200: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+    initial_bill_100: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+    initial_bill_50: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+    initial_bill_20: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+    initial_coin_100: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+    initial_coin_50: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+    initial_coin_20: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+    initial_coin_10: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+    initial_coin_5: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+    initial_coin_2: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+    initial_coin_1: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+    initial_coin_050: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+    initial_coin_020: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+    initial_coin_010: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     deactivated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

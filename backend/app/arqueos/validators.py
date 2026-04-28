@@ -33,10 +33,24 @@ DENOMINATION_MULTIPLIERS: dict[str, Decimal] = {
 
 
 def _to_decimal(value: Any) -> Decimal:
-    """Convierte cualquier tipo a Decimal con 2 decimales."""
+    """
+    Convierte cualquier tipo a Decimal con 2 decimales. Tolerante a None,
+    cadenas vacías y formatos comunes (con o sin espacios).
+    """
     if isinstance(value, Decimal):
         return value
-    return Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if value is None:
+        return Decimal("0.00")
+    s = str(value).strip()
+    if not s:
+        return Decimal("0.00")
+    try:
+        return Decimal(s).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except Exception:
+        # Cualquier formato inválido se trata como 0 para no romper la
+        # validación con un 500. La regla de denominaciones detectará el
+        # problema con un mensaje claro.
+        return Decimal("0.00")
 
 
 def validate_denominations_multiple(record_data: dict[str, Any]) -> list[str]:

@@ -1,9 +1,12 @@
 // Explorador de arqueos — drill-down: Bóvedas → Vista mensual
 import { useEffect, useState, useCallback } from 'react';
-import { ChevronRight, ChevronLeft } from 'lucide-react';
-import { Vault } from '@/services/vaultService';
+import { useSearchParams } from 'react-router-dom';
+import { ChevronRight, ChevronLeft, AlertTriangle } from 'lucide-react';
+import vaultService, { Vault } from '@/services/vaultService';
 import explorerService, { ExplorerRecord, ExplorerFilters, VaultDayBalance } from '@/services/explorerService';
 import { DENOMINATIONS } from '@/utils/constants';
+import { useAuthStore } from '@/store/authStore';
+import ReportFromArqueoModal from '@/components/errorReports/ReportFromArqueoModal';
 
 const fmt = (v: number | string) =>
   parseFloat(String(v)).toLocaleString('es-MX', { minimumFractionDigits: 2 });
@@ -119,6 +122,8 @@ function VaultList({ onSelect }: { onSelect: (v: Vault) => void }) {
 
 function MonthView({ vault }: { vault: Vault }) {
   const now = new Date();
+  const { user } = useAuthStore();
+  const canReport = user?.role === 'admin' || user?.role === 'operations';
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [records, setRecords] = useState<ExplorerRecord[]>([]);
@@ -127,6 +132,12 @@ function MonthView({ vault }: { vault: Vault }) {
   const [downloadError, setDownloadError] = useState('');
   const [includeCounterparts, setIncludeCounterparts] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [reportContext, setReportContext] = useState<{
+    headerId: number;
+    contextLabel: string;
+    records: { id: number; voucher: string; reference: string; movement_type_name?: string | null }[];
+    initialSelected: number[];
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -288,7 +299,7 @@ function MonthView({ vault }: { vault: Vault }) {
                 <th className="px-3 py-2">Tipo movimiento</th>
                 <th className="px-3 py-2 text-right">Entradas</th>
                 <th className="px-3 py-2 text-right">Salidas</th>
-                <th className="px-3 py-2">Estado</th>
+                <th className="px-3 py-2 text-right w-24">{canReport ? 'Reportar' : ''}</th>
               </tr>
             </thead>
             <tbody>
@@ -298,6 +309,11 @@ function MonthView({ vault }: { vault: Vault }) {
                 const dayEntries = dayMain.reduce((s, r) => s + r.entries, 0);
                 const dayWithdrawals = dayMain.reduce((s, r) => s + r.withdrawals, 0);
                 const dayStatus = dayRecords[0]?.header_status;
+
+                const dayHeaderId = dayRecords[0]?.arqueo_header_id;
+                const dayDateLabel = new Date(d + 'T12:00:00').toLocaleDateString('es-MX', {
+                  weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+                });
 
                 return [
                   // Sub-encabezado del día
@@ -321,7 +337,32 @@ function MonthView({ vault }: { vault: Vault }) {
                     <td className="px-3 py-1.5 text-right text-xs font-semibold text-error font-mono">
                       {dayWithdrawals > 0 ? `$${fmt(dayWithdrawals)}` : ''}
                     </td>
-                    <td />
+                    <td className="px-3 py-1.5 text-right">
+                      {canReport && dayHeaderId && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setReportContext({
+                              headerId: dayHeaderId,
+                              contextLabel: `${vault.vault_code} — ${vault.vault_name} · ${dayDateLabel}`,
+                              records: dayMain.map((r) => ({
+                                id: r.record_id,
+                                voucher: r.voucher,
+                                reference: r.reference,
+                                movement_type_name: r.movement_type_name,
+                              })),
+                              initialSelected: [],
+                            });
+                          }}
+                          className="text-[11px] text-warning hover:underline flex items-center gap-1 ml-auto"
+                          title="Reportar error en este arqueo"
+                        >
+                          <AlertTriangle className="w-3 h-3" />
+                          Reportar
+                        </button>
+                      )}
+                    </td>
                   </tr>,
 
                   // Filas de registros del día
@@ -361,7 +402,31 @@ function MonthView({ vault }: { vault: Vault }) {
                         <td className="px-3 py-1.5 text-right text-error font-mono text-xs">
                           {rec.withdrawals > 0 ? `$${fmt(rec.withdrawals)}` : '—'}
                         </td>
-                        <td />
+                        <td className="px-3 py-1.5 text-right">
+                          {canReport && !rec.is_counterpart && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setReportContext({
+                                  headerId: rec.arqueo_header_id,
+                                  contextLabel: `${vault.vault_code} — ${vault.vault_name} · ${dayDateLabel} · Comprobante ${rec.voucher}`,
+                                  records: dayMain.map((r) => ({
+                                    id: r.record_id,
+                                    voucher: r.voucher,
+                                    reference: r.reference,
+                                    movement_type_name: r.movement_type_name,
+                                  })),
+                                  initialSelected: [rec.record_id],
+                                });
+                              }}
+                              className="text-warning hover:text-warning/80"
+                              title="Reportar error en este registro"
+                            >
+                              <AlertTriangle className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </td>
                       </tr>,
 
                       // Panel de denominaciones
@@ -438,6 +503,16 @@ function MonthView({ vault }: { vault: Vault }) {
           </table>
         )}
       </div>
+
+      {reportContext && (
+        <ReportFromArqueoModal
+          arqueoHeaderId={reportContext.headerId}
+          contextLabel={reportContext.contextLabel}
+          records={reportContext.records}
+          initialSelected={reportContext.initialSelected}
+          onClose={() => setReportContext(null)}
+        />
+      )}
     </div>
   );
 }
@@ -445,14 +520,50 @@ function MonthView({ vault }: { vault: Vault }) {
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export default function ArqueoExplorer() {
+  // El vault seleccionado vive en la URL (?vault=ID) para que back/forward del
+  // navegador funcione naturalmente en el drill-down.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const vaultIdParam = searchParams.get('vault');
   const [selectedVault, setSelectedVault] = useState<Vault | null>(null);
+  const [resolving, setResolving] = useState(false);
+
+  const handleSelectVault = (v: Vault | null) => {
+    if (v) {
+      setSelectedVault(v);
+      setSearchParams({ vault: String(v.id) });
+    } else {
+      setSelectedVault(null);
+      setSearchParams({});
+    }
+  };
+
+  // Si llega ?vault= pero no tenemos el vault aún (hard-reload o forward),
+  // resolverlo desde el backend.
+  useEffect(() => {
+    if (!vaultIdParam) {
+      setSelectedVault(null);
+      return;
+    }
+    const id = Number(vaultIdParam);
+    if (selectedVault?.id === id) return;
+    setResolving(true);
+    vaultService
+      .getVault(id)
+      .then(setSelectedVault)
+      .catch(() => {
+        setSelectedVault(null);
+        setSearchParams({});
+      })
+      .finally(() => setResolving(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vaultIdParam]);
 
   return (
     <div className="space-y-4">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1 text-sm text-text-muted">
         <button
-          onClick={() => setSelectedVault(null)}
+          onClick={() => handleSelectVault(null)}
           className={`hover:text-primary ${!selectedVault ? 'text-text-primary font-medium' : ''}`}
         >
           Explorador
@@ -468,8 +579,12 @@ export default function ArqueoExplorer() {
         )}
       </nav>
 
-      {!selectedVault ? (
-        <VaultList onSelect={setSelectedVault} />
+      {resolving ? (
+        <div className="flex items-center justify-center h-32">
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+        </div>
+      ) : !selectedVault ? (
+        <VaultList onSelect={handleSelectVault} />
       ) : (
         <MonthView vault={selectedVault} />
       )}

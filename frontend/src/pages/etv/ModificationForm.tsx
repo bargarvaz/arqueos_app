@@ -4,7 +4,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import arqueoService, { ArqueoHeaderWithRecords, ArqueoRecord } from '@/services/arqueoService';
 import modificationService, { GracePeriod } from '@/services/modificationService';
 import catalogService, { MovementType, Sucursal } from '@/services/catalogService';
+import vaultService, { type DenominationInventory } from '@/services/vaultService';
 import { ROUTES, DENOMINATIONS } from '@/utils/constants';
+import CollapsibleInventoryPanel from '@/components/arqueo/CollapsibleInventoryPanel';
 
 interface ModificationReason {
   id: number;
@@ -31,6 +33,7 @@ export default function ModificationForm() {
   const navigate = useNavigate();
 
   const [header, setHeader] = useState<ArqueoHeaderWithRecords | null>(null);
+  const [inventory, setInventory] = useState<DenominationInventory | null>(null);
   const [gracePeriod, setGracePeriod] = useState<GracePeriod | null>(null);
   const [reasons, setReasons] = useState<ModificationReason[]>([]);
   const [movementTypes, setMovementTypes] = useState<MovementType[]>([]);
@@ -71,7 +74,63 @@ export default function ModificationForm() {
   const reloadHeader = async () => {
     const h = await arqueoService.getHeader(id);
     setHeader(h);
+    // recargar inventario tras cambios
+    try {
+      const inv = await vaultService.getDenominationInventory(h.vault_id, h.arqueo_date);
+      setInventory(inv);
+    } catch {
+      setInventory(null);
+    }
   };
+
+  // Cargar inventario una vez tengamos el header
+  useEffect(() => {
+    if (!header) return;
+    vaultService
+      .getDenominationInventory(header.vault_id, header.arqueo_date)
+      .then(setInventory)
+      .catch(() => setInventory(null));
+  }, [header?.vault_id, header?.arqueo_date]);
+
+  // Inventario en vivo: aplica los registros activos no contrapartida del header
+  // y, si hay edición/cancelación/agregar pendiente, simula el efecto.
+  const liveInventory = React.useMemo(() => {
+    if (!inventory || !header) return null;
+    const start: Record<string, number> = {};
+    DENOMINATIONS.forEach((d) => {
+      start[d.key] = parseFloat(inventory.inventory[d.key] || '0') || 0;
+    });
+
+    const applyRecord = (
+      rec: Record<string, string | number | null | undefined>,
+      sign: 1 | -1,
+    ) => {
+      const entries = parseFloat(String(rec.entries || '0')) || 0;
+      const recSign = entries > 0 ? 1 : -1;
+      DENOMINATIONS.forEach((d) => {
+        const v = parseFloat(String(rec[d.key] || '0')) || 0;
+        start[d.key] += sign * recSign * v;
+      });
+    };
+
+    const activeRecords = header.records.filter(
+      (r) => r.is_active && !r.is_counterpart,
+    );
+
+    activeRecords.forEach((r) => {
+      // Si es la fila que se está editando o cancelando, la excluimos del estado base
+      if (action?.record?.id === r.id) return;
+      applyRecord(r as unknown as Record<string, string>, 1);
+    });
+
+    // Si hay add/edit con datos siendo capturados, sumarlos
+    if (action?.type === 'add' || action?.type === 'edit') {
+      applyRecord(editData, 1);
+    }
+    // Si es cancel, ya excluimos el original arriba
+
+    return start;
+  }, [inventory, header, action, editData]);
 
   // ─── Abrir / cerrar acción ────────────────────────────────────────────────────
 
@@ -513,6 +572,20 @@ export default function ModificationForm() {
               ).toLocaleDateString('es-MX')} (${gracePeriod.days_remaining} días)`
             : 'Fuera del periodo de gracia. No se pueden realizar modificaciones.'}
         </div>
+      )}
+
+      {/* Inventario por denominación tras la modificación propuesta */}
+      {liveInventory && (
+        <CollapsibleInventoryPanel
+          title={
+            action
+              ? 'Inventario por denominación (con la modificación propuesta)'
+              : 'Inventario por denominación'
+          }
+          inventory={liveInventory}
+          unmigrated={inventory?.unmigrated ?? false}
+          defaultOpen={true}
+        />
       )}
 
       {/* Tabla de registros activos */}

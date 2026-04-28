@@ -7,7 +7,26 @@ export interface Branch {
   is_active: boolean;
 }
 
-export interface Vault {
+export interface InitialDenominations {
+  initial_bill_1000: string;
+  initial_bill_500: string;
+  initial_bill_200: string;
+  initial_bill_100: string;
+  initial_bill_50: string;
+  initial_bill_20: string;
+  initial_coin_100: string;
+  initial_coin_50: string;
+  initial_coin_20: string;
+  initial_coin_10: string;
+  initial_coin_5: string;
+  initial_coin_2: string;
+  initial_coin_1: string;
+  initial_coin_050: string;
+  initial_coin_020: string;
+  initial_coin_010: string;
+}
+
+export interface Vault extends InitialDenominations {
   id: number;
   vault_code: string;
   vault_name: string;
@@ -21,6 +40,13 @@ export interface Vault {
   is_active: boolean;
   deactivated_at: string | null;
   reactivated_at: string | null;
+}
+
+export interface DenominationInventory {
+  vault_id: number;
+  date: string;
+  unmigrated: boolean;
+  inventory: Record<keyof InitialDenominations | string, string>;
 }
 
 export interface PagedResponse<T> {
@@ -56,7 +82,7 @@ const vaultService = {
     empresa_id?: number | null;
     manager_id?: number | null;
     treasurer_id?: number | null;
-    initial_balance: string;
+    initial_denominations?: Partial<Record<keyof InitialDenominations, string>>;
   }): Promise<Vault> => {
     const { data } = await api.post('/vaults/', body);
     return data;
@@ -67,8 +93,20 @@ const vaultService = {
     empresa_id: number | null;
     manager_id: number | null;
     treasurer_id: number | null;
+    initial_denominations: Partial<Record<keyof InitialDenominations, string>>;
   }>): Promise<Vault> => {
     const { data } = await api.patch(`/vaults/${id}`, body);
+    return data;
+  },
+
+  /** Inventario disponible por denominación al inicio de `date` (default hoy). */
+  getDenominationInventory: async (
+    id: number,
+    date?: string,
+  ): Promise<DenominationInventory> => {
+    const { data } = await api.get(`/vaults/${id}/denomination-inventory`, {
+      params: date ? { date } : undefined,
+    });
     return data;
   },
 
@@ -77,13 +115,25 @@ const vaultService = {
     return data;
   },
 
-  reactivateVault: async (id: number, initial_balance: string): Promise<Vault> => {
-    const { data } = await api.post(`/vaults/${id}/reactivate`, { initial_balance });
+  reactivateVault: async (
+    id: number,
+    body: {
+      initial_balance?: string;
+      initial_denominations?: Partial<Record<keyof InitialDenominations, string>>;
+    },
+  ): Promise<Vault> => {
+    const { data } = await api.post(`/vaults/${id}/reactivate`, body);
     return data;
   },
 
-  setInitialBalance: async (id: number, initial_balance: string): Promise<Vault> => {
-    const { data } = await api.put(`/vaults/${id}/initial-balance`, { initial_balance });
+  setInitialBalance: async (
+    id: number,
+    body: {
+      initial_balance?: string;
+      initial_denominations?: Partial<Record<keyof InitialDenominations, string>>;
+    },
+  ): Promise<Vault> => {
+    const { data } = await api.put(`/vaults/${id}/initial-balance`, body);
     return data;
   },
 

@@ -12,60 +12,92 @@ from app.arqueos.models import ArqueoHeader, ArqueoRecord, ArqueoStatus
 from app.vaults.models import Vault
 
 
+def _resolve_range(
+    target_date: date | None,
+    date_from: date | None,
+    date_to: date | None,
+) -> tuple[date, date]:
+    """
+    Acepta cualquiera de las tres formas de filtrar y normaliza a (from, to):
+    - target_date solo → un solo día (back-compat)
+    - date_from/date_to → rango cualquiera
+    - ninguno → hoy
+    """
+    if date_from is None and date_to is None:
+        if target_date is None:
+            target_date = date.today()
+        return target_date, target_date
+    df = date_from or date_to or date.today()
+    dt = date_to or date_from or date.today()
+    if df > dt:
+        df, dt = dt, df
+    return df, dt
+
+
 async def get_summary(
     db: AsyncSession,
     target_date: date | None = None,
     company_id: int | None = None,
+    vault_id: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> dict[str, Any]:
     """
-    Métricas del día:
-    - Total bóvedas activas
-    - Bóvedas con arqueo publicado
-    - Bóvedas sin arqueo
-    - Total entradas del día
-    - Total salidas del día
-    - Bóvedas con saldo negativo
+    Métricas en el rango [date_from, date_to] (default: hoy):
+    - Total bóvedas activas (filtrado por ETV / bóveda si aplica)
+    - Arqueos publicados
+    - Bóvedas sin arqueo (las que no tienen ningún header publicado en el rango)
+    - Total entradas / salidas
+    - Headers con saldo negativo
     """
-    if target_date is None:
-        target_date = date.today()
+    df, dt = _resolve_range(target_date, date_from, date_to)
 
-    # Total bóvedas activas (con filtro opcional de empresa)
+    # Total bóvedas activas (universo del filtro)
     vaults_q = select(func.count(Vault.id)).where(Vault.is_active == True)
     if company_id:
         vaults_q = vaults_q.where(Vault.company_id == company_id)
+    if vault_id:
+        vaults_q = vaults_q.where(Vault.id == vault_id)
     total_vaults = (await db.execute(vaults_q)).scalar_one()
 
-    # Headers del día
+    # Headers en el rango
     headers_q = (
         select(ArqueoHeader)
         .join(Vault, Vault.id == ArqueoHeader.vault_id)
         .where(
-            ArqueoHeader.arqueo_date == target_date,
+            ArqueoHeader.arqueo_date >= df,
+            ArqueoHeader.arqueo_date <= dt,
             ArqueoHeader.status != ArqueoStatus.draft,
             Vault.is_active == True,
         )
     )
     if company_id:
         headers_q = headers_q.where(Vault.company_id == company_id)
+    if vault_id:
+        headers_q = headers_q.where(Vault.id == vault_id)
 
     headers_result = await db.execute(headers_q)
     headers = headers_result.scalars().all()
 
     published_count = len(headers)
-    missing_count = max(0, total_vaults - published_count)
+    # Para rango: missing = bóvedas sin NINGÚN header publicado en el rango
+    distinct_vaults_with_arqueo = len({h.vault_id for h in headers})
+    missing_count = max(0, total_vaults - distinct_vaults_with_arqueo)
     negative_count = sum(
         1 for h in headers if Decimal(str(h.closing_balance)) < 0
     )
 
-    # Totales de entradas/salidas del día
+    # Totales de entradas/salidas en el rango
     entries_q = (
         select(func.coalesce(func.sum(ArqueoRecord.entries), 0))
         .join(ArqueoHeader, ArqueoHeader.id == ArqueoRecord.arqueo_header_id)
         .join(Vault, Vault.id == ArqueoHeader.vault_id)
         .where(
-            ArqueoHeader.arqueo_date == target_date,
+            ArqueoHeader.arqueo_date >= df,
+            ArqueoHeader.arqueo_date <= dt,
             ArqueoHeader.status != ArqueoStatus.draft,
             ArqueoRecord.is_active == True,
+            ArqueoRecord.is_counterpart == False,
             Vault.is_active == True,
         )
     )
@@ -76,12 +108,17 @@ async def get_summary(
     if company_id:
         entries_q = entries_q.where(Vault.company_id == company_id)
         withdrawals_q = withdrawals_q.where(Vault.company_id == company_id)
+    if vault_id:
+        entries_q = entries_q.where(Vault.id == vault_id)
+        withdrawals_q = withdrawals_q.where(Vault.id == vault_id)
 
     total_entries = (await db.execute(entries_q)).scalar_one()
     total_withdrawals = (await db.execute(withdrawals_q)).scalar_one()
 
     return {
-        "date": str(target_date),
+        "date_from": str(df),
+        "date_to": str(dt),
+        "date": str(dt),  # back-compat para clientes viejos
         "total_vaults": total_vaults,
         "published_count": published_count,
         "missing_count": missing_count,
@@ -95,23 +132,31 @@ async def get_missing_vaults(
     db: AsyncSession,
     target_date: date | None = None,
     company_id: int | None = None,
+    vault_id: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> list[dict]:
-    """Lista de bóvedas activas sin arqueo en target_date."""
-    if target_date is None:
-        target_date = date.today()
+    """
+    Lista de bóvedas activas sin NINGÚN arqueo publicado en el rango
+    [date_from, date_to] (default hoy).
+    """
+    df, dt = _resolve_range(target_date, date_from, date_to)
 
     vaults_q = select(Vault).where(Vault.is_active == True)
     if company_id:
         vaults_q = vaults_q.where(Vault.company_id == company_id)
+    if vault_id:
+        vaults_q = vaults_q.where(Vault.id == vault_id)
 
     vaults_result = await db.execute(vaults_q)
     all_vaults = vaults_result.scalars().all()
 
-    # IDs de bóvedas que YA tienen arqueo
+    # IDs de bóvedas que tienen al menos un arqueo publicado en el rango
     submitted_q = (
         select(ArqueoHeader.vault_id)
         .where(
-            ArqueoHeader.arqueo_date == target_date,
+            ArqueoHeader.arqueo_date >= df,
+            ArqueoHeader.arqueo_date <= dt,
             ArqueoHeader.status != ArqueoStatus.draft,
         )
     )
@@ -134,16 +179,21 @@ async def get_missing_vaults(
 async def get_weekly_trend(
     db: AsyncSession,
     company_id: int | None = None,
+    vault_id: int | None = None,
+    end_date: date | None = None,
 ) -> list[dict]:
     """
-    Tendencia de 7 días: por cada día, total entradas, salidas y arqueos publicados.
+    Tendencia de 7 días terminando en `end_date` (default hoy): por cada día,
+    total entradas, salidas y arqueos publicados.
     """
-    today = date.today()
+    end = end_date or date.today()
     results = []
 
     for i in range(6, -1, -1):
-        day = today - timedelta(days=i)
-        summary = await get_summary(db, target_date=day, company_id=company_id)
+        day = end - timedelta(days=i)
+        summary = await get_summary(
+            db, target_date=day, company_id=company_id, vault_id=vault_id,
+        )
         results.append({
             "date": str(day),
             "published_count": summary["published_count"],
@@ -158,19 +208,24 @@ async def get_denomination_distribution(
     db: AsyncSession,
     target_date: date | None = None,
     company_id: int | None = None,
+    vault_id: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> list[dict]:
     """
-    Composición de la bóveda por denominación al cierre de target_date.
+    Composición por denominación al cierre del rango (acumulado hasta date_to).
 
     Para cada denominación, suma las entradas y resta las salidas de TODOS los
-    registros publicados (no draft) hasta target_date (inclusive). Esto refleja
-    el dinero que hay físicamente EN las bóvedas activas, no el flujo del día.
+    registros publicados (no draft) hasta date_to (inclusive). Esto refleja el
+    dinero que hay físicamente EN las bóvedas activas filtradas, no el flujo
+    del rango.
 
-    El check_constraint del modelo garantiza que entries y withdrawals son
-    mutuamente excluyentes, por lo que `entries > 0` distingue entradas de salidas.
+    `date_from` se ignora (siempre es acumulado desde el inicio): el rango se
+    interpreta como "saldo al cierre de date_to". `vault_id` y `company_id`
+    filtran qué bóvedas suman.
     """
-    if target_date is None:
-        target_date = date.today()
+    df, dt = _resolve_range(target_date, date_from, date_to)
+    target_date = dt
 
     denomination_fields = [
         ("bill_1000", "$1,000"),
@@ -210,6 +265,8 @@ async def get_denomination_distribution(
         )
         if company_id:
             q = q.where(Vault.company_id == company_id)
+        if vault_id:
+            q = q.where(Vault.id == vault_id)
 
         total = (await db.execute(q)).scalar_one()
         # No mostrar denominaciones negativas en la gráfica (puede pasar en datos

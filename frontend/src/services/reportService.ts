@@ -43,24 +43,36 @@ export interface DailyBalanceRow {
   status: string;
 }
 
+interface DashboardFilters {
+  target_date?: string;
+  date_from?: string;
+  date_to?: string;
+  company_id?: number;
+  vault_id?: number;
+}
+
 const reportService = {
   // ─── Dashboard ───────────────────────────────────────────────────────────────
-  getSummary: async (params?: { target_date?: string; company_id?: number }): Promise<DashboardSummary> => {
+  getSummary: async (params?: DashboardFilters): Promise<DashboardSummary> => {
     const { data } = await api.get('/dashboard/summary', { params });
     return data;
   },
 
-  getMissingVaults: async (params?: { target_date?: string; company_id?: number }): Promise<MissingVault[]> => {
+  getMissingVaults: async (params?: DashboardFilters): Promise<MissingVault[]> => {
     const { data } = await api.get('/dashboard/missing-vaults', { params });
     return data;
   },
 
-  getWeeklyTrend: async (params?: { company_id?: number }): Promise<WeeklyTrendPoint[]> => {
+  getWeeklyTrend: async (params?: {
+    company_id?: number;
+    vault_id?: number;
+    end_date?: string;
+  }): Promise<WeeklyTrendPoint[]> => {
     const { data } = await api.get('/dashboard/weekly-trend', { params });
     return data;
   },
 
-  getDenominationDistribution: async (params?: { target_date?: string; company_id?: number }): Promise<DenominationPoint[]> => {
+  getDenominationDistribution: async (params?: DashboardFilters): Promise<DenominationPoint[]> => {
     const { data } = await api.get('/dashboard/denomination-distribution', { params });
     return data;
   },

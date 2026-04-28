@@ -1,7 +1,7 @@
 // Campana de notificaciones con panel desplegable y polling
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell } from 'lucide-react';
+import { Bell, X, Trash2 } from 'lucide-react';
 import notificationService, { Notification } from '@/services/notificationService';
 import { POLLING_INTERVAL_MS, ROUTES } from '@/utils/constants';
 
@@ -48,7 +48,7 @@ export default function NotificationBell() {
   const loadNotifications = async () => {
     setLoading(true);
     try {
-      const page = await notificationService.list({ page: 1, page_size: 20 });
+      const page = await notificationService.list({ page: 1, page_size: 25 });
       setNotifications(page.items);
     } catch {
       // Silencioso
@@ -98,6 +98,20 @@ export default function NotificationBell() {
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
   };
 
+  const handleDelete = async (e: React.MouseEvent, id: number, was_unread: boolean) => {
+    e.stopPropagation();
+    await notificationService.delete(id).catch(() => {});
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    if (was_unread) setUnreadCount((c) => Math.max(0, c - 1));
+  };
+
+  const handleDeleteAll = async () => {
+    if (!confirm('¿Eliminar todas las notificaciones? No se pueden recuperar.')) return;
+    await notificationService.deleteAll().catch(() => {});
+    setNotifications([]);
+    setUnreadCount(0);
+  };
+
   return (
     <div className="relative" ref={panelRef}>
       <button
@@ -122,14 +136,26 @@ export default function NotificationBell() {
                 <span className="ml-2 badge badge-error text-xs">{unreadCount}</span>
               )}
             </h3>
-            {unreadCount > 0 && (
-              <button
-                className="text-xs text-primary hover:underline"
-                onClick={handleMarkAllRead}
-              >
-                Marcar todo leído
-              </button>
-            )}
+            <div className="flex items-center gap-3">
+              {unreadCount > 0 && (
+                <button
+                  className="text-xs text-primary hover:underline"
+                  onClick={handleMarkAllRead}
+                >
+                  Marcar todo leído
+                </button>
+              )}
+              {notifications.length > 0 && (
+                <button
+                  className="text-xs text-error hover:underline flex items-center gap-1"
+                  onClick={handleDeleteAll}
+                  title="Eliminar todas"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  Eliminar todas
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="max-h-80 overflow-y-auto">
@@ -143,30 +169,43 @@ export default function NotificationBell() {
               </p>
             ) : (
               notifications.map((notif) => (
-                <button
+                <div
                   key={notif.id}
-                  className={`w-full text-left px-4 py-3 border-b border-border/50 hover:bg-surface/60 transition-colors ${
+                  className={`group relative w-full px-4 py-3 border-b border-border/50 hover:bg-surface/60 transition-colors ${
                     !notif.is_read ? 'bg-primary/5' : ''
                   }`}
-                  onClick={() => handleNotifClick(notif)}
                 >
-                  <div className="flex items-start gap-2">
-                    {!notif.is_read && (
-                      <span className="mt-1.5 w-2 h-2 rounded-full bg-primary shrink-0" />
-                    )}
-                    <div className={!notif.is_read ? '' : 'ml-4'}>
-                      <p className="text-xs font-semibold text-text-primary line-clamp-1">
-                        {notif.title}
-                      </p>
-                      <p className="text-xs text-text-muted line-clamp-2 mt-0.5">
-                        {notif.message}
-                      </p>
-                      <p className="text-xs text-text-muted/60 mt-1">
-                        {timeAgo(notif.created_at)}
-                      </p>
+                  <button
+                    type="button"
+                    className="w-full text-left pr-6"
+                    onClick={() => handleNotifClick(notif)}
+                  >
+                    <div className="flex items-start gap-2">
+                      {!notif.is_read && (
+                        <span className="mt-1.5 w-2 h-2 rounded-full bg-primary shrink-0" />
+                      )}
+                      <div className={!notif.is_read ? '' : 'ml-4'}>
+                        <p className="text-xs font-semibold text-text-primary line-clamp-1">
+                          {notif.title}
+                        </p>
+                        <p className="text-xs text-text-muted line-clamp-2 mt-0.5">
+                          {notif.message}
+                        </p>
+                        <p className="text-xs text-text-muted/60 mt-1">
+                          {timeAgo(notif.created_at)}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                </button>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => handleDelete(e, notif.id, !notif.is_read)}
+                    className="absolute top-2 right-2 p-1 rounded-full text-text-muted hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Eliminar notificación"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               ))
             )}
           </div>

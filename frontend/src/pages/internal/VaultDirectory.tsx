@@ -1,6 +1,6 @@
 // Directorio de bóvedas — CRUD completo para admin
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Plus, Power, PowerOff, Edit2 } from 'lucide-react';
+import { Plus, Power, PowerOff, Edit2, Upload } from 'lucide-react';
 import { useForm, useWatch, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -8,11 +8,14 @@ import type { ColumnDef } from '@tanstack/react-table';
 
 import DataTable from '@/components/tables/DataTable';
 import ComboSelect, { type ComboOption } from '@/components/ui/ComboSelect';
+import DenominationGrid, { emptyDenominations } from '@/components/ui/DenominationGrid';
+import BulkImportModal from '@/components/bulk/BulkImportModal';
 import vaultService, { type Vault } from '@/services/vaultService';
 import userService, { type Company, type Empresa, type UserResponse } from '@/services/userService';
 import { formatCurrency } from '@/utils/formatters';
 import { getErrorMessage } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
+import { DENOMINATIONS } from '@/utils/constants';
 
 const createSchema = z.object({
   vault_code: z.string().min(1, 'Código requerido.').max(20),
@@ -21,8 +24,13 @@ const createSchema = z.object({
   empresa_id: z.number({ invalid_type_error: 'Selecciona empresa.' }).min(1, 'Empresa requerida.'),
   manager_id: z.number().nullable().optional(),
   treasurer_id: z.number().nullable().optional(),
-  initial_balance: z.string().regex(/^\d+(\.\d{1,2})?$/, 'Saldo inválido.'),
 });
+
+const sumDenominations = (d: Record<string, string>, prefix = ''): number =>
+  DENOMINATIONS.reduce(
+    (s, x) => s + (parseFloat(d[`${prefix}${x.key}`] || '0') || 0),
+    0,
+  );
 
 const editSchema = z.object({
   vault_name: z.string().min(2, 'Nombre requerido.').max(150),
@@ -52,15 +60,23 @@ export default function VaultDirectory() {
 
   const [showCreate, setShowCreate] = useState(false);
   const [createError, setCreateError] = useState('');
+  const [createDenoms, setCreateDenoms] = useState<Record<string, string>>(
+    emptyDenominations('initial_'),
+  );
+  const [showBulkImport, setShowBulkImport] = useState(false);
   const [editTarget, setEditTarget] = useState<Vault | null>(null);
   const [editError, setEditError] = useState('');
+  const [editDenoms, setEditDenoms] = useState<Record<string, string>>(
+    emptyDenominations('initial_'),
+  );
   const [reactivateTarget, setReactivateTarget] = useState<Vault | null>(null);
-  const [reactivateBalance, setReactivateBalance] = useState('0.00');
+  const [reactivateDenoms, setReactivateDenoms] = useState<Record<string, string>>(
+    emptyDenominations('initial_'),
+  );
   const [reactivateError, setReactivateError] = useState('');
 
   const createForm = useForm<CreateForm>({
     resolver: zodResolver(createSchema),
-    defaultValues: { initial_balance: '0.00' },
   });
   const editForm = useForm<EditForm>({ resolver: zodResolver(editSchema) });
 
@@ -122,7 +138,7 @@ export default function VaultDirectory() {
 
   const openReactivate = (vault: Vault) => {
     setReactivateTarget(vault);
-    setReactivateBalance('0.00');
+    setReactivateDenoms(emptyDenominations('initial_'));
     setReactivateError('');
   };
 
@@ -130,7 +146,9 @@ export default function VaultDirectory() {
     if (!reactivateTarget) return;
     setReactivateError('');
     try {
-      await vaultService.reactivateVault(reactivateTarget.id, reactivateBalance);
+      await vaultService.reactivateVault(reactivateTarget.id, {
+        initial_denominations: reactivateDenoms,
+      });
       setReactivateTarget(null);
       await load();
     } catch (err) { setReactivateError(getErrorMessage(err)); }
@@ -139,6 +157,13 @@ export default function VaultDirectory() {
   const openEdit = (vault: Vault) => {
     setEditTarget(vault);
     setEditError('');
+    // Cargar denominaciones existentes
+    const denoms: Record<string, string> = {};
+    DENOMINATIONS.forEach((d) => {
+      const fld = `initial_${d.key}` as keyof Vault;
+      denoms[`initial_${d.key}`] = String(vault[fld] ?? '0');
+    });
+    setEditDenoms(denoms);
     editForm.reset({
       vault_name: vault.vault_name,
       empresa_id: vault.empresa_id ?? null,
@@ -156,6 +181,7 @@ export default function VaultDirectory() {
         empresa_id: data.empresa_id ?? null,
         manager_id: data.manager_id ?? null,
         treasurer_id: data.treasurer_id ?? null,
+        initial_denominations: editDenoms,
       });
       setEditTarget(null);
       await load();
@@ -172,10 +198,11 @@ export default function VaultDirectory() {
         empresa_id: data.empresa_id ?? null,
         manager_id: data.manager_id ?? null,
         treasurer_id: data.treasurer_id ?? null,
-        initial_balance: data.initial_balance,
+        initial_denominations: createDenoms,
       });
       setShowCreate(false);
-      createForm.reset({ initial_balance: '0.00' });
+      createForm.reset();
+      setCreateDenoms(emptyDenominations('initial_'));
       await load();
     } catch (err) { setCreateError(getErrorMessage(err)); }
   };
@@ -201,7 +228,21 @@ export default function VaultDirectory() {
       cell: ({ row }) => {
         const v = row.original;
         const balance = v.current_balance ?? v.initial_balance;
-        return <span className="font-mono">{formatCurrency(String(balance))}</span>;
+        const initialTotal = sumDenominations(v as unknown as Record<string, string>, 'initial_');
+        const isUnmigrated = parseFloat(v.initial_balance) > 0 && initialTotal === 0;
+        return (
+          <div className="flex flex-col items-start gap-0.5">
+            <span className="font-mono">{formatCurrency(String(balance))}</span>
+            {isUnmigrated && (
+              <span
+                className="text-[10px] text-warning"
+                title="Esta bóveda tiene saldo inicial pero no tiene desglose por denominación. Edítala para capturar el desglose y activar las validaciones."
+              >
+                ⚠ Sin migrar
+              </span>
+            )}
+          </div>
+        );
       },
     },
     {
@@ -280,12 +321,25 @@ export default function VaultDirectory() {
             Mostrar inactivas
           </label>
           {isAdmin && (
-            <button
-              onClick={() => { setShowCreate(true); setCreateError(''); createForm.reset({ initial_balance: '0.00' }); }}
-              className="btn-primary flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" /> Nueva bóveda
-            </button>
+            <>
+              <button
+                onClick={() => setShowBulkImport(true)}
+                className="btn-outline flex items-center gap-2"
+              >
+                <Upload className="w-4 h-4" /> Carga masiva
+              </button>
+              <button
+                onClick={() => {
+                  setShowCreate(true);
+                  setCreateError('');
+                  createForm.reset();
+                  setCreateDenoms(emptyDenominations('initial_'));
+                }}
+                className="btn-primary flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" /> Nueva bóveda
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -306,12 +360,15 @@ export default function VaultDirectory() {
       {/* ─── Modal Crear ─────────────────────────────────────────────── */}
       {showCreate && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg w-full max-w-lg shadow-xl">
-            <div className="flex items-center justify-between p-5 border-b border-border">
+          <div className="bg-white rounded-lg w-full max-w-3xl shadow-xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-border flex-shrink-0">
               <h2 className="text-base font-semibold text-text-primary">Nueva Bóveda</h2>
               <button onClick={() => setShowCreate(false)} className="text-text-muted hover:text-text-primary text-lg leading-none">×</button>
             </div>
-            <form onSubmit={createForm.handleSubmit(onCreateSubmit)} className="p-5 space-y-4">
+            <form
+              onSubmit={createForm.handleSubmit(onCreateSubmit)}
+              className="p-5 space-y-4 overflow-y-auto flex-1 min-h-0"
+            >
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="label">Código</label>
@@ -325,15 +382,15 @@ export default function VaultDirectory() {
                   )}
                 </div>
                 <div>
-                  <label className="label">Saldo inicial</label>
+                  <label className="label">Saldo inicial total</label>
                   <input
-                    type="text" placeholder="0.00"
-                    className={createForm.formState.errors.initial_balance ? 'input-error' : 'input'}
-                    {...createForm.register('initial_balance')}
+                    type="text" disabled
+                    className="input bg-surface text-text-muted"
+                    value={`$${sumDenominations(createDenoms, 'initial_').toLocaleString('es-MX', { minimumFractionDigits: 2 })}`}
                   />
-                  {createForm.formState.errors.initial_balance && (
-                    <p className="text-status-error text-xs mt-1">{createForm.formState.errors.initial_balance.message}</p>
-                  )}
+                  <p className="text-xs text-text-muted mt-1">
+                    Se calcula desde el desglose por denominación.
+                  </p>
                 </div>
                 <div className="col-span-2">
                   <label className="label">Nombre</label>
@@ -406,6 +463,23 @@ export default function VaultDirectory() {
                   />
                 </div>
               </div>
+
+              {/* Saldo inicial por denominación */}
+              <div className="border-t border-border pt-4">
+                <p className="text-sm font-medium text-text-primary mb-2">
+                  Saldo inicial por denominación
+                </p>
+                <p className="text-xs text-text-muted mb-3">
+                  Captura el efectivo físico que la bóveda contiene al darse de alta. El
+                  total se usa como saldo inicial.
+                </p>
+                <DenominationGrid
+                  prefix="initial_"
+                  value={createDenoms}
+                  onChange={setCreateDenoms}
+                />
+              </div>
+
               {createError && <p className="text-status-error text-sm">{createError}</p>}
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setShowCreate(false)} className="btn-secondary flex-1">Cancelar</button>
@@ -421,14 +495,17 @@ export default function VaultDirectory() {
       {/* ─── Modal Editar ─────────────────────────────────────────────── */}
       {editTarget && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg w-full max-w-lg shadow-xl">
-            <div className="flex items-center justify-between p-5 border-b border-border">
+          <div className="bg-white rounded-lg w-full max-w-3xl shadow-xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-border flex-shrink-0">
               <h2 className="text-base font-semibold text-text-primary">
                 Editar Bóveda — <span className="font-mono text-primary">{editTarget.vault_code}</span>
               </h2>
               <button onClick={() => setEditTarget(null)} className="text-text-muted hover:text-text-primary text-lg leading-none">×</button>
             </div>
-            <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="p-5 space-y-4">
+            <form
+              onSubmit={editForm.handleSubmit(onEditSubmit)}
+              className="p-5 space-y-4 overflow-y-auto flex-1 min-h-0"
+            >
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <label className="label">Nombre</label>
@@ -485,6 +562,22 @@ export default function VaultDirectory() {
                   />
                 </div>
               </div>
+              {/* Saldo inicial por denominación (editable también desde aquí) */}
+              <div className="border-t border-border pt-4">
+                <p className="text-sm font-medium text-text-primary mb-2">
+                  Saldo inicial por denominación
+                </p>
+                <p className="text-xs text-text-muted mb-3">
+                  Modificar afecta el saldo inicial total y el inventario disponible
+                  para validaciones futuras.
+                </p>
+                <DenominationGrid
+                  prefix="initial_"
+                  value={editDenoms}
+                  onChange={setEditDenoms}
+                />
+              </div>
+
               {editError && <p className="text-status-error text-sm">{editError}</p>}
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setEditTarget(null)} className="btn-secondary flex-1">Cancelar</button>
@@ -500,7 +593,7 @@ export default function VaultDirectory() {
       {/* ─── Modal Reactivar ──────────────────────────────────────────── */}
       {reactivateTarget && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg w-full max-w-sm shadow-xl">
+          <div className="bg-white rounded-lg w-full max-w-2xl shadow-xl max-h-[90vh] overflow-auto">
             <div className="flex items-center justify-between p-5 border-b border-border">
               <h2 className="text-base font-semibold text-text-primary">Reactivar Bóveda</h2>
               <button onClick={() => setReactivateTarget(null)} className="text-text-muted hover:text-text-primary text-lg leading-none">×</button>
@@ -510,13 +603,16 @@ export default function VaultDirectory() {
                 Bóveda: <span className="font-mono text-primary font-semibold">{reactivateTarget.vault_code}</span> — {reactivateTarget.vault_name}
               </p>
               <div>
-                <label className="label">Saldo inicial de reactivación</label>
-                <input
-                  type="text"
-                  value={reactivateBalance}
-                  onChange={(e) => setReactivateBalance(e.target.value)}
-                  className="input"
-                  placeholder="0.00"
+                <p className="text-sm font-medium text-text-primary mb-2">
+                  Saldo inicial de reactivación
+                </p>
+                <p className="text-xs text-text-muted mb-3">
+                  Captura el desglose del efectivo físico al momento de reactivar.
+                </p>
+                <DenominationGrid
+                  prefix="initial_"
+                  value={reactivateDenoms}
+                  onChange={setReactivateDenoms}
                 />
               </div>
               {reactivateError && <p className="text-status-error text-sm">{reactivateError}</p>}
@@ -527,6 +623,32 @@ export default function VaultDirectory() {
             </div>
           </div>
         </div>
+      )}
+
+      {showBulkImport && (
+        <BulkImportModal
+          title="Carga masiva de bóvedas"
+          endpoint="/vaults/bulk-import"
+          templateFilename="bovedas_template.csv"
+          renderRowSummary={(item) => (
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+              <span className="font-mono font-medium">{String(item.vault_code ?? '')}</span>
+              <span className="text-text-muted">{String(item.vault_name ?? '')}</span>
+              {Boolean(item.company_name) && (
+                <span className="text-text-muted text-[11px]">
+                  ETV: {String(item.company_name)}
+                </span>
+              )}
+              {Boolean(item.initial_balance) && (
+                <span className="text-text-muted text-[11px]">
+                  Saldo inicial: ${String(item.initial_balance)}
+                </span>
+              )}
+            </div>
+          )}
+          onClose={() => setShowBulkImport(false)}
+          onSuccess={load}
+        />
       )}
     </div>
   );

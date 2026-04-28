@@ -39,6 +39,7 @@ async def explore_records(
     query = (
         select(
             ArqueoRecord,
+            ArqueoHeader.id.label("header_id"),
             ArqueoHeader.arqueo_date,
             ArqueoHeader.status.label("header_status"),
             ArqueoHeader.vault_id,
@@ -102,12 +103,13 @@ async def explore_records(
 
     rows = []
     for (
-        record, arqueo_date, header_status, vault_id_val,
+        record, header_id, arqueo_date, header_status, vault_id_val,
         vault_code, vault_name, company_name, branch_name, movement_type_name,
     ) in rows_raw:
         rows.append({
             "record_id": record.id,
             "record_uid": record.record_uid,
+            "arqueo_header_id": header_id,
             "arqueo_date": str(arqueo_date),
             "vault_id": vault_id_val,
             "vault_code": vault_code,

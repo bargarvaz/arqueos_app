@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Router de gestión de usuarios (solo Admin)."""
 
-from fastapi import APIRouter, Depends, Request, status, Query
+from fastapi import APIRouter, Depends, Request, status, Query, UploadFile, File
 
 from app.users import service as user_service
 from app.users.schemas import (
@@ -197,6 +197,7 @@ async def create_user(
         company_id=body.company_id,
         empresa_id=body.empresa_id,
         puesto=body.puesto,
+        etv_subrole=body.etv_subrole,
         vault_ids=body.vault_ids,
         created_by_user_id=admin.id,
         ip_address=ip,
@@ -265,6 +266,7 @@ async def update_user(
         is_active=body.is_active,
         company_id=body.company_id,
         empresa_id=body.empresa_id,
+        etv_subrole=body.etv_subrole,
         fields_set=body.model_fields_set,
         ip_address=ip,
         user_agent=ua,
@@ -290,6 +292,63 @@ async def reset_password(
         user_agent=ua,
     )
     return PasswordResetResponse(temp_password=temp_password)
+
+
+@router.get("/bulk-import/template", response_class=None)
+async def get_users_csv_template(_=AdminUser):
+    """Plantilla CSV vacía para importación masiva."""
+    from fastapi.responses import Response
+    from app.users.bulk_import import csv_template
+    return Response(
+        content=csv_template(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=usuarios_template.csv"},
+    )
+
+
+@router.post("/bulk-import/preview")
+async def preview_users_import(
+    db: DbSession,
+    file: UploadFile = File(...),
+    _=AdminUser,
+):
+    """Lee el CSV y devuelve un preview con errores por fila. NO crea nada."""
+    from app.users.bulk_import import parse_csv, validate_and_preview
+    content = await file.read()
+    rows, format_errors = parse_csv(content)
+    if format_errors:
+        return {
+            "format_errors": format_errors,
+            "items": [],
+            "valid": 0,
+            "invalid": 0,
+        }
+    return await validate_and_preview(db, rows)
+
+
+@router.post("/bulk-import/apply")
+async def apply_users_import(
+    request: Request,
+    db: DbSession,
+    file: UploadFile = File(...),
+    admin=AdminUser,
+):
+    """Aplica el import. Falla si hay cualquier fila con error (transacción por fila)."""
+    from app.users.bulk_import import parse_csv, validate_and_preview, apply_import
+    content = await file.read()
+    rows, format_errors = parse_csv(content)
+    if format_errors:
+        return {
+            "format_errors": format_errors,
+            "applied": False,
+            "created": 0,
+            "failed": 0,
+            "results": [],
+        }
+    preview = await validate_and_preview(db, rows)
+    ip = request.client.host if request.client else None
+    ua = request.headers.get("user-agent")
+    return await apply_import(db, preview, admin.id, ip, ua)
 
 
 @router.put("/{user_id}/vaults", status_code=status.HTTP_204_NO_CONTENT)

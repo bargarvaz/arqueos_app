@@ -20,6 +20,7 @@ export interface MeResponse {
   company_id: number | null;
   empresa_id: number | null;
   puesto: string | null;
+  etv_subrole: 'gerente' | 'tesorero' | null;
 }
 
 export interface OtpStep1Response {

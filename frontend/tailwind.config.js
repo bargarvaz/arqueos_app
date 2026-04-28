@@ -35,6 +35,24 @@ export default {
           info: '#1976D2',
           'info-light': '#E3F2FD',
         },
+        // Aliases sin prefijo `status-` para que `text-error`, `bg-error/10`, etc.
+        // funcionen consistentemente en todo el código.
+        error: {
+          DEFAULT: '#D32F2F',
+          light: '#FFEBEE',
+        },
+        success: {
+          DEFAULT: '#388E3C',
+          light: '#E8F5E9',
+        },
+        warning: {
+          DEFAULT: '#F57C00',
+          light: '#FFF3E0',
+        },
+        info: {
+          DEFAULT: '#1976D2',
+          light: '#E3F2FD',
+        },
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],

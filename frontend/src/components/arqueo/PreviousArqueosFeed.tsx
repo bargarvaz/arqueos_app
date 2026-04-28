@@ -1,7 +1,9 @@
 // Feed con lazy loading de arqueos previos (read-only) para el formulario ETV
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ChevronDown, ChevronRight, Edit } from 'lucide-react';
 import arqueoService, { ArqueoHeader, ArqueoRecord, ArqueoHeaderWithRecords } from '@/services/arqueoService';
+import { ROUTES } from '@/utils/constants';
 
 const formatMXN = (v: string | number) =>
   parseFloat(String(v)).toLocaleString('es-MX', { minimumFractionDigits: 2 });
@@ -21,6 +23,7 @@ interface DayState {
 }
 
 export default function PreviousArqueosFeed({ vaultId, currentDate }: Props) {
+  const navigate = useNavigate();
   const [days, setDays] = useState<DayState[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -142,23 +145,23 @@ export default function PreviousArqueosFeed({ vaultId, currentDate }: Props) {
           );
           return (
             <div key={d.header.id} className="card p-0 overflow-hidden bg-surface/40">
-              <button
-                type="button"
-                onClick={() => toggleExpand(idx)}
-                className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface text-left"
-              >
-                <div className="flex items-center gap-3">
+              <div className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface gap-3">
+                <button
+                  type="button"
+                  onClick={() => toggleExpand(idx)}
+                  className="flex-1 flex items-center gap-3 text-left min-w-0"
+                >
                   {d.expanded ? (
-                    <ChevronDown className="w-4 h-4 text-text-muted" />
+                    <ChevronDown className="w-4 h-4 text-text-muted flex-shrink-0" />
                   ) : (
-                    <ChevronRight className="w-4 h-4 text-text-muted" />
+                    <ChevronRight className="w-4 h-4 text-text-muted flex-shrink-0" />
                   )}
-                  <span className="text-sm font-medium capitalize">{fechaLarga}</span>
+                  <span className="text-sm font-medium capitalize truncate">{fechaLarga}</span>
                   {isAuto && (
                     <span className="badge badge-warning text-xs">Auto (en blanco)</span>
                   )}
-                </div>
-                <div className="flex items-center gap-4 text-xs text-text-muted">
+                </button>
+                <div className="flex items-center gap-4 text-xs text-text-muted flex-shrink-0">
                   <span>
                     Apertura{' '}
                     <span className="font-mono text-text-primary">
@@ -175,8 +178,17 @@ export default function PreviousArqueosFeed({ vaultId, currentDate }: Props) {
                       ${formatMXN(d.header.closing_balance)}
                     </span>
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`${ROUTES.ETV_MODIFICATIONS}/${d.header.id}`)}
+                    className="flex items-center gap-1 text-xs text-primary hover:underline"
+                    title="Modificar este arqueo"
+                  >
+                    <Edit className="w-3 h-3" />
+                    Modificar
+                  </button>
                 </div>
-              </button>
+              </div>
 
               {d.expanded && (
                 <div className="border-t border-border bg-white">

@@ -12,8 +12,10 @@ import arqueoService, {
 import { useDraft } from '@/hooks/useDraft';
 import { DENOMINATIONS, ROUTES, ARQUEO_STATUS } from '@/utils/constants';
 import catalogService, { MovementType, Sucursal } from '@/services/catalogService';
+import vaultService, { type DenominationInventory } from '@/services/vaultService';
 import CertificateManager from '@/components/documents/CertificateManager';
 import PreviousArqueosFeed from '@/components/arqueo/PreviousArqueosFeed';
+import CollapsibleInventoryPanel from '@/components/arqueo/CollapsibleInventoryPanel';
 
 // ─── Esquema de validación Zod ────────────────────────────────────────────────
 
@@ -124,6 +126,7 @@ export default function ArqueoForm() {
   const [serverError, setServerError] = useState('');
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [draftRestored, setDraftRestored] = useState(false);
+  const [inventory, setInventory] = useState<DenominationInventory | null>(null);
 
   const draftKey = state ? `${state.vault.id}_${state.arqueo_date}` : '';
 
@@ -139,12 +142,16 @@ export default function ArqueoForm() {
     defaultValues: { records: [] },
   });
 
-  const { fields, append, remove } = useFieldArray({ control, name: 'records' });
+  const { fields, append, remove, move } = useFieldArray({ control, name: 'records' });
   const records = watch('records');
+
+  // Drag & drop state
+  const [draggingIdx, setDraggingIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
   // ─── Draft ──────────────────────────────────────────────────────────────────
 
-  const { clearDraft, hasDraft, lastSavedAt } = useDraft<RecordValues[]>({
+  const { clearDraft, lastSavedAt } = useDraft<RecordValues[]>({
     key: draftKey,
     data: records as RecordValues[],
     onRestore: (saved) => {
@@ -168,52 +175,69 @@ export default function ArqueoForm() {
       catalogService.getMovementTypes(),
       catalogService.getSucursales(),
     ])
-      .then(([h, mt, suc]) => {
+      .then(async ([h, mt, suc]) => {
         setHeader(h);
         setMovementTypes(mt.filter((m) => m.is_active));
         setSucursales(suc.filter((s) => s.is_active));
 
-        // Si el header ya tiene registros (revisita), cargarlos — solo si no hay draft
-        if (!localStorage.getItem(`arqueo_draft_${draftKey}`)) {
-          if (state.header_id) {
-            return arqueoService.getHeader(state.header_id).then((hwr: ArqueoHeaderWithRecords) => {
-              if (hwr.records.length > 0) {
-                const mapped = hwr.records.map((r) => ({
-                  ...r,
-                  entries: r.entries,
-                  withdrawals: r.withdrawals,
-                  record_date: r.record_date,
-                })) as unknown as RecordValues[];
-                reset({ records: mapped });
-              } else {
-                reset({ records: Array.from({ length: 5 }, () => emptyRecord(state.arqueo_date)) });
-              }
-            });
-          } else {
-            reset({ records: Array.from({ length: 5 }, () => emptyRecord(state.arqueo_date)) });
-          }
+        // SIEMPRE consultar el detalle del header. Si tiene registros publicados,
+        // esos son la fuente de verdad y sobreescriben cualquier draft vacío
+        // que el autosave inicial pudo haber creado.
+        const hwr: ArqueoHeaderWithRecords = await arqueoService.getHeader(h.id);
+        if (hwr.records.length > 0) {
+          const mapped = hwr.records.map((r) => ({
+            ...r,
+            entries: r.entries,
+            withdrawals: r.withdrawals,
+            record_date: r.record_date,
+          })) as unknown as RecordValues[];
+          reset({ records: mapped });
+          // Limpiar el draft local: ya tenemos los registros publicados frescos.
+          localStorage.removeItem(`arqueo_draft_${draftKey}`);
+        } else if (!localStorage.getItem(`arqueo_draft_${draftKey}`)) {
+          // Sin records publicados y sin draft → arrancar con filas vacías.
+          reset({ records: Array.from({ length: 5 }, () => emptyRecord(state.arqueo_date)) });
         }
+        // Si no hay records publicados pero sí hay draft, el hook useDraft ya
+        // lo restauró via onRestore — no tocamos.
       })
       .catch(() => setServerError('Error al cargar el formulario. Intenta de nuevo.'))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ─── Auto-colapso de denominaciones al cuadrar ──────────────────────────────
+  // ─── Inventario disponible por denominación ─────────────────────────────────
 
   useEffect(() => {
-    if (expandedRow === null) return;
-    const record = records[expandedRow];
-    if (!record) return;
-    const entries = parseFloat(record.entries) || 0;
-    const withdrawals = parseFloat(record.withdrawals) || 0;
-    const activeAmount = entries > 0 ? entries : withdrawals;
-    if (activeAmount === 0) return;
-    const denomSum = calcDenomSum(record);
-    if (Math.abs(denomSum - activeAmount) <= 0.001) {
-      setExpandedRow(null);
-    }
-  }, [records, expandedRow]);
+    if (!state) return;
+    vaultService
+      .getDenominationInventory(state.vault.id, state.arqueo_date)
+      .then(setInventory)
+      .catch(() => setInventory(null));
+  }, [state]);
+
+  // Saldo disponible neto por denom = inventario_inicio - Σ(salidas) + Σ(entradas) del día
+  const liveInventory = React.useMemo(() => {
+    if (!inventory) return null;
+    const out: Record<string, number> = {};
+    DENOMINATIONS.forEach((d) => {
+      out[d.key] = parseFloat(inventory.inventory[d.key] || '0') || 0;
+    });
+    records.forEach((r) => {
+      const entries = parseFloat(r.entries || '0') || 0;
+      const sign = entries > 0 ? 1 : -1;
+      const recAny = r as unknown as Record<string, string>;
+      DENOMINATIONS.forEach((d) => {
+        const v = parseFloat(recAny[d.key] || '0') || 0;
+        out[d.key] += sign * v;
+      });
+    });
+    return out;
+  }, [inventory, records]);
+
+  // (Auto-colapso eliminado: causaba que el panel se cerrara apenas cuadraba la
+  // suma, lo que daba la sensación de que "no se podía abrir". Ahora el toggle
+  // es totalmente manual.)
 
   // ─── Publicar ────────────────────────────────────────────────────────────────
 
@@ -309,8 +333,13 @@ export default function ArqueoForm() {
           >
             ← Mis Bóvedas
           </button>
-          <h1 className="text-xl font-semibold text-text-primary">
-            {state?.vault.vault_name}
+          <h1 className="text-xl font-semibold text-text-primary flex items-center gap-2 flex-wrap">
+            <span>{state?.vault.vault_name}</span>
+            {state?.vault.vault_code && (
+              <span className="font-mono text-sm text-text-muted bg-surface px-2 py-0.5 rounded border border-border">
+                {state.vault.vault_code}
+              </span>
+            )}
           </h1>
           <p className="text-sm text-text-muted">
             Arqueo del{' '}
@@ -321,6 +350,14 @@ export default function ArqueoForm() {
                 month: 'long',
                 day: 'numeric',
               })}
+            {header && (
+              <span className="ml-2 text-text-muted/70">
+                · Arqueo #{header.id}
+              </span>
+            )}
+            {header?.vault_code && header.vault_name && header.vault_name !== state?.vault.vault_name && (
+              <span className="ml-2 text-text-muted/70">· {header.vault_name}</span>
+            )}
           </p>
         </div>
 
@@ -344,20 +381,6 @@ export default function ArqueoForm() {
           </div>
         </div>
       </div>
-
-      {/* Draft banner */}
-      {hasDraft && !draftRestored && (
-        <div className="mb-4 p-3 bg-warning/10 border border-warning rounded-lg flex justify-between items-center text-sm">
-          <span>Hay un borrador guardado. Fue restaurado automáticamente.</span>
-          <button
-            type="button"
-            onClick={clearDraft}
-            className="text-error hover:underline ml-4 shrink-0"
-          >
-            Descartar
-          </button>
-        </div>
-      )}
 
       {isLocked && (
         <div className="mb-4 p-3 bg-info/10 border border-info rounded-lg text-sm">
@@ -389,12 +412,23 @@ export default function ArqueoForm() {
         </div>
       )}
 
+      {/* Panel inventario por denominación (en vivo) */}
+      {liveInventory && (
+        <CollapsibleInventoryPanel
+          title="Inventario por denominación al cierre proyectado"
+          inventory={liveInventory}
+          unmigrated={inventory?.unmigrated ?? false}
+          defaultOpen={true}
+        />
+      )}
+
       {/* Tabla de registros */}
       <form onSubmit={handleSubmit(onSubmit)}>
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-text-muted border-b border-border">
+                {!readOnly && <th className="px-1 py-2 w-6" title="Arrastra para reordenar"></th>}
                 <th className="px-2 py-2 w-6">#</th>
                 <th className="px-2 py-2">Comprobante</th>
                 <th className="px-2 py-2">Referencia</th>
@@ -410,15 +444,59 @@ export default function ArqueoForm() {
               {fields.map((field, idx) => {
                 const denomError = getDenomError(idx);
                 const isExpanded = expandedRow === idx;
+                const isDragging = draggingIdx === idx;
+                const isDragOver = dragOverIdx === idx && draggingIdx !== null && draggingIdx !== idx;
 
                 return (
                   <React.Fragment key={field.id}>
                     <tr
+                      onDragOver={(e) => {
+                        if (draggingIdx === null || readOnly) return;
+                        e.preventDefault();
+                        if (dragOverIdx !== idx) setDragOverIdx(idx);
+                      }}
+                      onDrop={(e) => {
+                        if (draggingIdx === null || readOnly) return;
+                        e.preventDefault();
+                        if (draggingIdx !== idx) {
+                          move(draggingIdx, idx);
+                        }
+                        setDraggingIdx(null);
+                        setDragOverIdx(null);
+                      }}
+                      onDragLeave={() => {
+                        if (dragOverIdx === idx) setDragOverIdx(null);
+                      }}
                       className={`border-b border-border/50 ${
                         idx % 2 === 0 ? 'bg-white' : 'bg-surface/40'
-                      } ${denomError ? 'ring-1 ring-inset ring-error/50' : ''}`}
+                      } ${denomError ? 'ring-1 ring-inset ring-error/50' : ''}
+                      ${isDragging ? 'opacity-40' : ''}
+                      ${isDragOver ? 'border-t-2 border-t-primary' : ''}`}
                     >
+                      {!readOnly && (
+                        <td
+                          className="px-1 py-1.5 text-text-muted cursor-grab active:cursor-grabbing select-none text-center"
+                          draggable
+                          onDragStart={(e) => {
+                            setDraggingIdx(idx);
+                            e.dataTransfer.effectAllowed = 'move';
+                            // Necesario para Firefox
+                            e.dataTransfer.setData('text/plain', String(idx));
+                          }}
+                          onDragEnd={() => {
+                            setDraggingIdx(null);
+                            setDragOverIdx(null);
+                          }}
+                          title="Arrastra para reordenar"
+                        >
+                          ⠿
+                        </td>
+                      )}
                       <td className="px-2 py-1.5 text-text-muted">{idx + 1}</td>
+
+                      {/* Hidden: record_uid (preserva el id original entre republicaciones) */}
+                      <input type="hidden" {...register(`records.${idx}.record_uid`)} />
+                      <input type="hidden" {...register(`records.${idx}.record_date`)} />
 
                       {/* Comprobante */}
                       <td className="px-2 py-1.5">
@@ -563,7 +641,7 @@ export default function ArqueoForm() {
                     {/* Denominaciones expandibles */}
                     {isExpanded && (
                       <tr className="bg-surface/60">
-                        <td colSpan={readOnly ? 8 : 9} className="px-4 py-3">
+                        <td colSpan={readOnly ? 8 : 10} className="px-4 py-3">
                           <div className="flex flex-wrap gap-x-6 gap-y-2">
                             <div className="w-full text-xs font-medium text-text-muted mb-1">
                               Billetes

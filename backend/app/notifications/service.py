@@ -273,3 +273,28 @@ async def mark_all_as_read(db: AsyncSession, user_id: int) -> None:
         .values(is_read=True, read_at=datetime.now(timezone.utc))
     )
     await db.commit()
+
+
+async def delete_notification(
+    db: AsyncSession, notification_id: int, user_id: int
+) -> bool:
+    """Elimina una notificación si pertenece al usuario. Retorna True si se borró."""
+    from sqlalchemy import delete as sql_delete
+    result = await db.execute(
+        sql_delete(Notification).where(
+            Notification.id == notification_id,
+            Notification.recipient_id == user_id,
+        )
+    )
+    await db.commit()
+    return (result.rowcount or 0) > 0
+
+
+async def delete_all_notifications(db: AsyncSession, user_id: int) -> int:
+    """Elimina todas las notificaciones del usuario. Retorna cuántas se eliminaron."""
+    from sqlalchemy import delete as sql_delete
+    result = await db.execute(
+        sql_delete(Notification).where(Notification.recipient_id == user_id)
+    )
+    await db.commit()
+    return result.rowcount or 0

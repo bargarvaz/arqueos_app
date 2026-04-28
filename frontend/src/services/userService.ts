@@ -14,6 +14,8 @@ export interface Empresa {
   is_active: boolean;
 }
 
+export type EtvSubrole = 'gerente' | 'tesorero';
+
 export interface UserResponse {
   id: number;
   email: string;
@@ -23,6 +25,7 @@ export interface UserResponse {
   company_id: number | null;    // ETV
   empresa_id: number | null;    // Sub-empresa
   puesto: string | null;
+  etv_subrole: EtvSubrole | null;
   is_active: boolean;
   must_change_password: boolean;
   mfa_enabled: boolean;
@@ -37,6 +40,7 @@ export interface CreateUserPayload {
   full_name: string;
   role: string;
   puesto?: string | null;
+  etv_subrole?: EtvSubrole | null;
   company_id?: number | null;
   empresa_id?: number | null;
   vault_ids?: number[];
@@ -48,6 +52,7 @@ export interface UpdateUserPayload {
   is_active?: boolean;
   company_id?: number | null;
   empresa_id?: number | null;
+  etv_subrole?: EtvSubrole | null;
 }
 
 export interface PagedUsers {

@@ -83,5 +83,6 @@ class MeResponse(BaseModel):
     company_id: int | None
     empresa_id: int | None = None
     puesto: str | None = None
+    etv_subrole: str | None = None
 
     model_config = {"from_attributes": True}

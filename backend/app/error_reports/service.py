@@ -14,10 +14,63 @@ from app.common.exceptions import NotFoundError, ForbiddenError, BusinessRuleErr
 logger = logging.getLogger(__name__)
 
 
+async def resolve_assignee_for_header(
+    db: AsyncSession,
+    arqueo_header_id: int,
+) -> tuple[int | None, str | None]:
+    """
+    Decide a qué usuario ETV asignar un reporte basándose en la bóveda del arqueo.
+
+    Prioridad:
+      1. vault.manager_id (si existe y el usuario está activo)
+      2. vault.treasurer_id (si existe y el usuario está activo)
+      3. Primera UserVaultAssignment activa de la bóveda
+
+    Retorna (user_id, via) donde `via` es 'manager' / 'treasurer' / 'vault_assignment'
+    o (None, None) si la bóveda no tiene a nadie asignado.
+    """
+    from app.arqueos.models import ArqueoHeader
+    from app.vaults.models import Vault
+    from app.users.models import User, UserVaultAssignment
+
+    header = await db.get(ArqueoHeader, arqueo_header_id)
+    if not header:
+        return None, None
+
+    vault = await db.get(Vault, header.vault_id)
+    if not vault:
+        return None, None
+
+    if vault.manager_id:
+        u = await db.get(User, vault.manager_id)
+        if u and u.is_active:
+            return u.id, "manager"
+    if vault.treasurer_id:
+        u = await db.get(User, vault.treasurer_id)
+        if u and u.is_active:
+            return u.id, "treasurer"
+
+    rows = await db.execute(
+        select(UserVaultAssignment.user_id)
+        .join(User, User.id == UserVaultAssignment.user_id)
+        .where(
+            UserVaultAssignment.vault_id == vault.id,
+            UserVaultAssignment.is_active == True,
+            User.is_active == True,
+        )
+        .order_by(UserVaultAssignment.user_id)
+    )
+    first = rows.first()
+    if first:
+        return first[0], "vault_assignment"
+
+    return None, None
+
+
 async def create_error_report(
     db: AsyncSession,
     reported_by: int,
-    assigned_to: int,
+    assigned_to: int | None,
     description: str,
     record_ids: list[int],
     arqueo_header_id: int | None,
@@ -25,9 +78,23 @@ async def create_error_report(
     """
     Crea un reporte de error.
     - reported_by: usuario Operations/Admin
-    - assigned_to: usuario ETV al que se asigna
+    - assigned_to: usuario ETV al que se asigna. Si es None y arqueo_header_id
+      está presente, se autoresuelve desde la bóveda.
     - Notifica al ETV
     """
+    if assigned_to is None:
+        if arqueo_header_id is None:
+            raise BusinessRuleError(
+                "Se requiere arqueo_header_id para autoresolver el destinatario."
+            )
+        resolved, _via = await resolve_assignee_for_header(db, arqueo_header_id)
+        if resolved is None:
+            raise BusinessRuleError(
+                "La bóveda de este arqueo no tiene gerente, tesorero ni usuarios "
+                "asignados. Asigna un usuario ETV antes de reportar."
+            )
+        assigned_to = resolved
+
     report = ErrorReport(
         reported_by=reported_by,
         assigned_to=assigned_to,

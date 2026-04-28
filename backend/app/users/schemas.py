@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Schemas Pydantic del módulo de usuarios."""
 
-from pydantic import BaseModel, EmailStr, field_validator
-from app.users.models import UserRole, UserType
+from pydantic import BaseModel, EmailStr, field_validator, model_validator
+from app.users.models import UserRole, UserType, EtvSubrole
 
 
 class CompanyCreate(BaseModel):
@@ -44,6 +44,7 @@ class UserCreate(BaseModel):
     company_id: int | None = None   # ETV (transportadora)
     empresa_id: int | None = None   # Sub-empresa dentro de la ETV
     puesto: str | None = None
+    etv_subrole: EtvSubrole | None = None
     vault_ids: list[int] = []
 
     @field_validator("company_id")
@@ -53,6 +54,18 @@ class UserCreate(BaseModel):
             raise ValueError("Los usuarios ETV deben tener una ETV asignada.")
         return v
 
+    @model_validator(mode="after")
+    def validate_etv_subrole(self):
+        if self.role == UserRole.etv and self.etv_subrole is None:
+            raise ValueError(
+                "Los usuarios ETV deben tener un sub-rol (Gerente o Tesorero)."
+            )
+        if self.role != UserRole.etv and self.etv_subrole is not None:
+            raise ValueError(
+                "El sub-rol Gerente/Tesorero solo aplica a usuarios ETV."
+            )
+        return self
+
 
 class UserUpdate(BaseModel):
     full_name: str | None = None
@@ -60,6 +73,7 @@ class UserUpdate(BaseModel):
     is_active: bool | None = None
     company_id: int | None = None
     empresa_id: int | None = None
+    etv_subrole: EtvSubrole | None = None
 
 
 class UserResponse(BaseModel):
@@ -71,6 +85,7 @@ class UserResponse(BaseModel):
     company_id: int | None     # ETV
     empresa_id: int | None     # Sub-empresa
     puesto: str | None
+    etv_subrole: EtvSubrole | None
     is_active: bool
     must_change_password: bool
     mfa_enabled: bool

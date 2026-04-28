@@ -1,6 +1,6 @@
 // Reportes de error — vista interna (admin / operations)
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, CheckCircle, MessageSquare } from 'lucide-react';
+import { Plus, CheckCircle, MessageSquare, ChevronDown, ChevronRight, User as UserIcon, Vault as VaultIcon, Calendar } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -47,6 +47,18 @@ export default function ErrorReports() {
   const [etvUsers, setEtvUsers] = useState<UserResponse[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [createError, setCreateError] = useState('');
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+
+  const toggleExpand = (id: number) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const formatMXN = (v: string | number) =>
+    parseFloat(String(v) || '0').toLocaleString('es-MX', { minimumFractionDigits: 2 });
 
   const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<CreateForm>({
     resolver: zodResolver(createSchema),
@@ -140,45 +152,144 @@ export default function ErrorReports() {
         </div>
       ) : (
         <div className="space-y-3">
-          {reports.map((r) => (
-            <div key={r.id} className="card">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-1">
-                    <span className="text-xs font-mono text-text-muted">#{r.id}</span>
-                    <span className={`text-xs ${STATUS_BADGE[r.status] ?? 'badge-neutral'}`}>
-                      {STATUS_LABELS[r.status] ?? r.status}
+          {reports.map((r) => {
+            const expanded = expandedIds.has(r.id);
+            return (
+              <div key={r.id} className="card p-0 overflow-hidden">
+                {/* Cabecera clickeable */}
+                <button
+                  type="button"
+                  onClick={() => toggleExpand(r.id)}
+                  className="w-full text-left p-4 hover:bg-surface/40 transition-colors"
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 text-text-muted">
+                      {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                     </span>
-                    {r.arqueo_header_id && (
-                      <span className="text-xs text-text-muted">Arqueo #{r.arqueo_header_id}</span>
-                    )}
-                    <span className="text-xs text-text-muted ml-auto">{formatDatetime(r.created_at)}</span>
-                  </div>
-                  <p className="text-sm text-text-primary">{r.description}</p>
-
-                  {r.response && (
-                    <div className="mt-2 bg-surface rounded p-3 border-l-2 border-primary">
-                      <p className="text-xs font-semibold text-text-secondary mb-1 flex items-center gap-1">
-                        <MessageSquare className="w-3 h-3" />
-                        Respuesta del ETV
-                      </p>
-                      <p className="text-sm text-text-primary">{r.response}</p>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3 flex-wrap mb-1">
+                        <span className="text-xs font-mono text-text-muted">#{r.id}</span>
+                        <span className={`text-xs ${STATUS_BADGE[r.status] ?? 'badge-neutral'}`}>
+                          {STATUS_LABELS[r.status] ?? r.status}
+                        </span>
+                        {r.vault_code && (
+                          <span className="text-xs flex items-center gap-1 text-text-secondary">
+                            <VaultIcon className="w-3 h-3" />
+                            <span className="font-mono">{r.vault_code}</span>
+                            {r.vault_name && <span className="text-text-muted">— {r.vault_name}</span>}
+                          </span>
+                        )}
+                        {r.arqueo_date && (
+                          <span className="text-xs flex items-center gap-1 text-text-muted">
+                            <Calendar className="w-3 h-3" />
+                            {new Date(r.arqueo_date + 'T12:00:00').toLocaleDateString('es-MX')}
+                          </span>
+                        )}
+                        <span className="text-xs text-text-muted ml-auto">{formatDatetime(r.created_at)}</span>
+                      </div>
+                      <p className="text-sm text-text-primary line-clamp-2">{r.description}</p>
                     </div>
-                  )}
-                </div>
+                  </div>
+                </button>
 
-                {canCreate && r.status !== 'resolved' && r.status !== 'closed' && r.response && (
-                  <button
-                    onClick={() => handleResolve(r)}
-                    className="flex items-center gap-1 text-xs text-status-success hover:bg-status-success-light px-2 py-1 rounded flex-shrink-0"
-                  >
-                    <CheckCircle className="w-3.5 h-3.5" />
-                    Resolver
-                  </button>
+                {/* Detalle expandido */}
+                {expanded && (
+                  <div className="px-5 pb-5 space-y-3 border-t border-border/50 bg-surface/20">
+                    {/* Personas involucradas */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                      <div className="text-xs">
+                        <p className="text-text-muted mb-0.5 flex items-center gap-1">
+                          <UserIcon className="w-3 h-3" /> Reportado por
+                        </p>
+                        <p className="text-text-primary font-medium">
+                          {r.reported_by_name ?? `Usuario #${r.reported_by}`}
+                        </p>
+                      </div>
+                      <div className="text-xs">
+                        <p className="text-text-muted mb-0.5 flex items-center gap-1">
+                          <UserIcon className="w-3 h-3" /> Asignado a
+                        </p>
+                        <p className="text-text-primary font-medium">
+                          {r.assigned_to_name ?? `Usuario #${r.assigned_to}`}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Descripción completa */}
+                    <div>
+                      <p className="text-xs text-text-muted mb-1">Descripción</p>
+                      <p className="text-sm text-text-primary whitespace-pre-wrap">{r.description}</p>
+                    </div>
+
+                    {/* Registros afectados */}
+                    {r.records.length > 0 && (
+                      <div>
+                        <p className="text-xs text-text-muted mb-2">
+                          Registros afectados ({r.records.length})
+                        </p>
+                        <div className="border border-border rounded overflow-hidden">
+                          <table className="w-full text-xs">
+                            <thead className="bg-surface">
+                              <tr className="text-left text-text-muted">
+                                <th className="px-3 py-1.5">UID</th>
+                                <th className="px-3 py-1.5">Comprobante</th>
+                                <th className="px-3 py-1.5">Referencia</th>
+                                <th className="px-3 py-1.5">Sucursal</th>
+                                <th className="px-3 py-1.5">Tipo</th>
+                                <th className="px-3 py-1.5 text-right">Entradas</th>
+                                <th className="px-3 py-1.5 text-right">Salidas</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {r.records.map((rec) => (
+                                <tr key={rec.id} className="border-t border-border/40 bg-white">
+                                  <td className="px-3 py-1.5 font-mono text-text-muted">{rec.record_uid}</td>
+                                  <td className="px-3 py-1.5">{rec.voucher}</td>
+                                  <td className="px-3 py-1.5 text-text-muted">{rec.reference}</td>
+                                  <td className="px-3 py-1.5 text-text-muted">{rec.sucursal_name ?? '—'}</td>
+                                  <td className="px-3 py-1.5 text-text-muted">{rec.movement_type_name ?? '—'}</td>
+                                  <td className="px-3 py-1.5 text-right font-mono text-success">
+                                    {parseFloat(rec.entries) > 0 ? `$${formatMXN(rec.entries)}` : '—'}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right font-mono text-error">
+                                    {parseFloat(rec.withdrawals) > 0 ? `$${formatMXN(rec.withdrawals)}` : '—'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Respuesta del ETV */}
+                    {r.response && (
+                      <div className="bg-white rounded p-3 border-l-2 border-primary">
+                        <p className="text-xs font-semibold text-text-secondary mb-1 flex items-center gap-1">
+                          <MessageSquare className="w-3 h-3" />
+                          Respuesta del ETV
+                        </p>
+                        <p className="text-sm text-text-primary whitespace-pre-wrap">{r.response}</p>
+                      </div>
+                    )}
+
+                    {/* Acciones */}
+                    {canCreate && r.status !== 'resolved' && r.status !== 'closed' && r.response && (
+                      <div className="flex justify-end">
+                        <button
+                          onClick={() => handleResolve(r)}
+                          className="btn btn-outline text-xs flex items-center gap-1"
+                        >
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          Marcar como resuelto
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

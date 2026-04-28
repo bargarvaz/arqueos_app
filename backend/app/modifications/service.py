@@ -20,7 +20,13 @@ from sqlalchemy import select
 
 from app.arqueos.models import ArqueoHeader, ArqueoRecord, ArqueoStatus, CounterpartType
 from app.arqueos.validators import validate_record, is_row_empty
-from app.arqueos.service import recalculate_cascade, _record_snapshot
+from app.arqueos.service import (
+    recalculate_cascade,
+    _record_snapshot,
+    get_denomination_inventory,
+    validate_denomination_balance,
+    DENOMINATION_FIELDS as RECORD_DENOMINATION_FIELDS,
+)
 from app.catalogs.service import get_last_business_day_of_month
 from app.modifications.models import ArqueoModification, ModificationType
 from app.common.exceptions import NotFoundError, ForbiddenError, BusinessRuleError
@@ -58,6 +64,115 @@ async def check_grace_period(db: AsyncSession, arqueo_date: date) -> tuple[bool,
     is_within = today <= deadline
     days_remaining = (deadline - today).days if is_within else None
     return is_within, deadline, days_remaining
+
+
+def _coerce_int_or_none(value: Any) -> int | None:
+    """Convierte valores del payload (que pueden venir como string) a int o None."""
+    if value is None or value == "" or value == 0 or value == "0":
+        return None
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _coerce_int(value: Any) -> int:
+    """Convierte a int. Lanza BusinessRuleError si no se puede."""
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        raise BusinessRuleError(f"Valor entero inválido: {value!r}")
+
+
+def _coerce_date(value: Any, fallback: date) -> date:
+    """Convierte string ISO 'YYYY-MM-DD' a date; usa fallback si vacío/inválido."""
+    if isinstance(value, date):
+        return value
+    if value is None or value == "":
+        return fallback
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except (ValueError, TypeError):
+        return fallback
+
+
+async def _validate_inventory_after_change(
+    db: AsyncSession,
+    vault_id: int,
+    arqueo_date: date,
+    header_id: int,
+    excluded_record_id: int | None,
+    extra_record: dict[str, Any] | None,
+) -> None:
+    """
+    Valida que tras la modificación propuesta:
+    - Si se cancela un record (excluded_record_id != None, extra=None): se simula
+      excluir ese record del header del día.
+    - Si se agrega/edita: se simula su efecto en el header del día.
+
+    Lanza BusinessRuleError si alguna denominación queda negativa.
+    """
+    inventory_start = await get_denomination_inventory(db, vault_id, arqueo_date)
+    if any(v is None for v in inventory_start.values()):
+        # Bóveda sin migrar: se relaja la validación
+        return
+
+    # Cargar registros activos no-counterpart del header (excluyendo el editado/cancelado)
+    # Orden por id = orden de captura.
+    rows = await db.execute(
+        select(ArqueoRecord)
+        .where(
+            ArqueoRecord.arqueo_header_id == header_id,
+            ArqueoRecord.is_active == True,
+            ArqueoRecord.is_counterpart == False,
+        )
+        .order_by(ArqueoRecord.id)
+    )
+    current_records = [
+        r for r in rows.scalars().all()
+        if excluded_record_id is None or r.id != excluded_record_id
+    ]
+
+    # En edit: el extra_record reemplaza al original en su MISMA posición
+    # En add: el extra_record va al final
+    proposed: list = list(current_records)
+    if extra_record is not None:
+        if excluded_record_id is not None:
+            # Edit: insertar en la posición que tenía el original
+            # Como ya excluimos el original, necesitamos saber su posición original
+            all_rows = await db.execute(
+                select(ArqueoRecord)
+                .where(
+                    ArqueoRecord.arqueo_header_id == header_id,
+                    ArqueoRecord.is_active == True,
+                    ArqueoRecord.is_counterpart == False,
+                )
+                .order_by(ArqueoRecord.id)
+            )
+            all_records = list(all_rows.scalars().all())
+            try:
+                original_idx = next(
+                    i for i, r in enumerate(all_records) if r.id == excluded_record_id
+                )
+                proposed.insert(original_idx, extra_record)
+            except StopIteration:
+                proposed.append(extra_record)
+        else:
+            proposed.append(extra_record)
+
+    issues = validate_denomination_balance(
+        inventory_start, proposed, intraday=True,
+    )
+    if issues:
+        row = issues[0].get("row")
+        details = ", ".join(
+            f"{i['denomination']} (disponible ${i['available']}, faltan ${i['deficit']})"
+            for i in issues
+        )
+        prefix = f"Fila {row}: " if row else ""
+        raise BusinessRuleError(
+            f"{prefix}la modificación dejaría denominaciones en negativo — {details}."
+        )
 
 
 def _negate_record(record: ArqueoRecord) -> dict[str, Any]:
@@ -172,6 +287,16 @@ async def cancel_record(
             "No se pueden realizar más modificaciones."
         )
 
+    # Validar inventario tras la cancelación (sólo afecta si el original era entry)
+    await _validate_inventory_after_change(
+        db,
+        vault_id=header.vault_id,
+        arqueo_date=header.arqueo_date,
+        header_id=header.id,
+        excluded_record_id=original.id,
+        extra_record=None,
+    )
+
     snap_before = _record_snapshot(original)
 
     # Desactivar original
@@ -269,6 +394,16 @@ async def edit_record(
     # Validar nuevos datos
     validate_record(new_data)
 
+    # Validar inventario tras editar (excluir original, agregar new_data)
+    await _validate_inventory_after_change(
+        db,
+        vault_id=header.vault_id,
+        arqueo_date=header.arqueo_date,
+        header_id=header.id,
+        excluded_record_id=original.id,
+        extra_record=new_data,
+    )
+
     snap_before = _record_snapshot(original)
 
     # Desactivar original
@@ -295,12 +430,20 @@ async def edit_record(
         original_record_uid=original.record_uid,
         voucher=new_data.get("voucher", original.voucher),
         reference=new_data.get("reference", original.reference),
-        sucursal_id=new_data.get("sucursal_id", original.sucursal_id),
-        movement_type_id=new_data.get("movement_type_id", original.movement_type_id),
-        entries=new_data.get("entries", "0"),
-        withdrawals=new_data.get("withdrawals", "0"),
-        record_date=new_data.get("record_date", original.record_date),
-        **{f: new_data.get(f, 0) for f in denomination_fields},
+        sucursal_id=(
+            _coerce_int_or_none(new_data.get("sucursal_id"))
+            if "sucursal_id" in new_data
+            else original.sucursal_id
+        ),
+        movement_type_id=(
+            _coerce_int(new_data.get("movement_type_id"))
+            if new_data.get("movement_type_id")
+            else original.movement_type_id
+        ),
+        entries=new_data.get("entries", "0") or "0",
+        withdrawals=new_data.get("withdrawals", "0") or "0",
+        record_date=_coerce_date(new_data.get("record_date"), original.record_date),
+        **{f: new_data.get(f) or 0 for f in denomination_fields},
     )
     db.add(corrected)
     await db.flush()
@@ -377,6 +520,16 @@ async def add_record(
     # Validar datos del nuevo registro
     validate_record(record_data)
 
+    # Validar inventario tras agregar
+    await _validate_inventory_after_change(
+        db,
+        vault_id=header.vault_id,
+        arqueo_date=header.arqueo_date,
+        header_id=header.id,
+        excluded_record_id=None,
+        extra_record=record_data,
+    )
+
     new_uid = await generate_unique_uid(db, ArqueoRecord, "record_uid")
     denomination_fields = [
         "bill_1000", "bill_500", "bill_200", "bill_100", "bill_50", "bill_20",
@@ -391,12 +544,12 @@ async def add_record(
         is_counterpart=False,
         voucher=record_data.get("voucher", ""),
         reference=record_data.get("reference", ""),
-        sucursal_id=record_data.get("sucursal_id"),
-        movement_type_id=record_data["movement_type_id"],
-        entries=record_data.get("entries", "0"),
-        withdrawals=record_data.get("withdrawals", "0"),
-        record_date=record_data.get("record_date", header.arqueo_date),
-        **{f: record_data.get(f, 0) for f in denomination_fields},
+        sucursal_id=_coerce_int_or_none(record_data.get("sucursal_id")),
+        movement_type_id=_coerce_int(record_data.get("movement_type_id")),
+        entries=record_data.get("entries", "0") or "0",
+        withdrawals=record_data.get("withdrawals", "0") or "0",
+        record_date=_coerce_date(record_data.get("record_date"), header.arqueo_date),
+        **{f: record_data.get(f) or 0 for f in denomination_fields},
     )
     db.add(new_record)
     await db.flush()

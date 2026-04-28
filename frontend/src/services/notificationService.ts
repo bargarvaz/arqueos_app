@@ -51,6 +51,15 @@ const notificationService = {
   markAllAsRead: async (): Promise<void> => {
     await api.put('/notifications/mark-all-read');
   },
+
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`/notifications/${id}`);
+  },
+
+  deleteAll: async (): Promise<{ deleted: number }> => {
+    const { data } = await api.delete<{ deleted: number }>('/notifications');
+    return data;
+  },
 };
 
 export default notificationService;

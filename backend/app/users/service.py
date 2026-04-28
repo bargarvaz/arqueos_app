@@ -5,7 +5,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 
-from app.users.models import User, Company, UserVaultAssignment, UserRole, UserType
+from app.users.models import User, Company, UserVaultAssignment, UserRole, UserType, EtvSubrole
 from app.audit.service import log_action
 from app.auth.utils import hash_password, generate_temp_password
 from app.common.exceptions import NotFoundError, ConflictError, ForbiddenError
@@ -23,6 +23,7 @@ async def create_user(
     company_id: int | None,
     empresa_id: int | None = None,
     puesto: str | None = None,
+    etv_subrole: EtvSubrole | None = None,
     vault_ids: list[int],
     created_by_user_id: int,
     ip_address: str | None = None,
@@ -53,6 +54,7 @@ async def create_user(
         company_id=company_id,
         empresa_id=empresa_id,
         puesto=puesto,
+        etv_subrole=etv_subrole if role == UserRole.etv else None,
         is_active=True,
         must_change_password=True,
         mfa_enabled=mfa_enabled,
@@ -144,6 +146,7 @@ async def update_user(
     is_active: bool | None = None,
     company_id: int | None = None,
     empresa_id: int | None = None,
+    etv_subrole: EtvSubrole | None = None,
     fields_set: set[str] | None = None,
     ip_address: str | None = None,
     user_agent: str | None = None,
@@ -169,6 +172,7 @@ async def update_user(
         k for k, v in {
             "full_name": full_name, "puesto": puesto, "is_active": is_active,
             "company_id": company_id, "empresa_id": empresa_id,
+            "etv_subrole": etv_subrole,
         }.items() if v is not None
     }
 
@@ -182,6 +186,9 @@ async def update_user(
         user.company_id = company_id
     if "empresa_id" in explicit:
         user.empresa_id = empresa_id
+    if "etv_subrole" in explicit:
+        # Solo aplica si el rol es ETV
+        user.etv_subrole = etv_subrole if user.role == UserRole.etv else None
 
     await log_action(
         db,
