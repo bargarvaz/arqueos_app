@@ -23,15 +23,21 @@ const createSchema = z
   .object({
     email: z.string().email('Email inválido.'),
     full_name: z.string().min(2, 'Nombre requerido.'),
-    role: z.enum(['admin', 'operations', 'data_science', 'etv']),
+    role: z.enum(['admin', 'operations', 'data_science', 'etv'], {
+      errorMap: () => ({ message: 'Selecciona un rol.' }),
+    }),
     etv_subrole: z.enum(['gerente', 'tesorero']).optional(),
-    puesto: z.string().optional(),
+    puesto: z.string().min(2, 'Puesto requerido.'),
     company_id: z.number().nullable().optional(),
     empresa_id: z.number().nullable().optional(),
   })
   .refine(
     (d) => d.role !== 'etv' || !!d.etv_subrole,
     { message: 'Selecciona Gerente o Tesorero.', path: ['etv_subrole'] },
+  )
+  .refine(
+    (d) => d.role !== 'etv' || !!d.company_id,
+    { message: 'ETV requerida.', path: ['company_id'] },
   );
 
 type CreateForm = z.infer<typeof createSchema>;
@@ -142,6 +148,7 @@ export default function UserManagement() {
     handleSubmit,
     watch,
     reset,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<CreateForm>({ resolver: zodResolver(createSchema) });
 
@@ -311,6 +318,19 @@ export default function UserManagement() {
 
   const onCreateSubmit = async (data: CreateForm) => {
     setCreateError('');
+    // Validación condicional: si el ETV tiene sub-empresas configuradas,
+    // hay que elegir una. Si no tiene, el campo no se renderiza y no aplica.
+    if (
+      data.role === 'etv' &&
+      empresas.length > 0 &&
+      (data.empresa_id == null || Number.isNaN(data.empresa_id))
+    ) {
+      setError('empresa_id', {
+        type: 'manual',
+        message: 'Empresa requerida.',
+      });
+      return;
+    }
     try {
       const { tempPassword: tp } = await userService.createUser({
         email: data.email,
@@ -641,17 +661,23 @@ export default function UserManagement() {
               <form onSubmit={handleSubmit(onCreateSubmit)} className="p-5 space-y-4 overflow-y-auto flex-1">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2">
-                    <label className="label">Correo electrónico</label>
+                    <label className="label">
+                      Correo electrónico <span className="text-status-error">*</span>
+                    </label>
                     <input type="email" className={errors.email ? 'input-error' : 'input'} {...register('email')} />
                     {errors.email && <p className="text-status-error text-xs mt-1">{errors.email.message}</p>}
                   </div>
                   <div className="col-span-2">
-                    <label className="label">Nombre completo</label>
+                    <label className="label">
+                      Nombre completo <span className="text-status-error">*</span>
+                    </label>
                     <input type="text" className={errors.full_name ? 'input-error' : 'input'} {...register('full_name')} />
                     {errors.full_name && <p className="text-status-error text-xs mt-1">{errors.full_name.message}</p>}
                   </div>
                   <div>
-                    <label className="label">Rol</label>
+                    <label className="label">
+                      Rol <span className="text-status-error">*</span>
+                    </label>
                     <select
                       className={errors.role ? 'input-error' : 'input'}
                       {...register('role')}
@@ -697,35 +723,62 @@ export default function UserManagement() {
                     )}
                   </div>
                   <div className="col-span-2">
-                    <label className="label">Puesto</label>
+                    <label className="label">
+                      Puesto <span className="text-status-error">*</span>
+                    </label>
                     <input
                       type="text"
-                      className="input"
+                      className={errors.puesto ? 'input-error' : 'input'}
                       placeholder="Ej. Gerente de Operaciones"
                       {...register('puesto')}
                     />
+                    {errors.puesto && (
+                      <p className="text-status-error text-xs mt-1">
+                        {errors.puesto.message}
+                      </p>
+                    )}
                   </div>
 
                   {watchRole === 'etv' && (
                     <>
                       <div className="col-span-2">
-                        <label className="label">ETV (transportadora) <span className="text-status-error">*</span></label>
-                        <select className="input" {...register('company_id', { valueAsNumber: true })}>
+                        <label className="label">
+                          ETV (transportadora) <span className="text-status-error">*</span>
+                        </label>
+                        <select
+                          className={errors.company_id ? 'input-error' : 'input'}
+                          {...register('company_id', { valueAsNumber: true })}
+                        >
                           <option value="">Seleccionar ETV...</option>
                           {companies.map(c => (
                             <option key={c.id} value={c.id}>{c.name}</option>
                           ))}
                         </select>
+                        {errors.company_id && (
+                          <p className="text-status-error text-xs mt-1">
+                            {errors.company_id.message}
+                          </p>
+                        )}
                       </div>
                       {empresas.length > 0 && (
                         <div className="col-span-2">
-                          <label className="label">Empresa</label>
-                          <select className="input" {...register('empresa_id', { valueAsNumber: true })}>
-                            <option value="">Sin empresa específica</option>
+                          <label className="label">
+                            Empresa <span className="text-status-error">*</span>
+                          </label>
+                          <select
+                            className={errors.empresa_id ? 'input-error' : 'input'}
+                            {...register('empresa_id', { valueAsNumber: true })}
+                          >
+                            <option value="">Seleccionar empresa...</option>
                             {empresas.map(e => (
                               <option key={e.id} value={e.id}>{e.name}</option>
                             ))}
                           </select>
+                          {errors.empresa_id && (
+                            <p className="text-status-error text-xs mt-1">
+                              {errors.empresa_id.message}
+                            </p>
+                          )}
                         </div>
                       )}
                       <div className="col-span-2">
