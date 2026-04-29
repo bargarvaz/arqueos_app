@@ -14,6 +14,28 @@ from app.common.pagination import PaginationParams
 logger = logging.getLogger(__name__)
 
 
+async def count_users_by_role(
+    db: AsyncSession, *, is_active: bool | None = None
+) -> dict[str, int]:
+    """Cuenta usuarios agrupados por rol. Si `is_active` se pasa, filtra por
+    ese estado. Devuelve un dict con todas las claves de UserRole (incluso 0)
+    + clave `total`.
+    """
+    from sqlalchemy import func
+    query = select(User.role, func.count(User.id)).group_by(User.role)
+    if is_active is not None:
+        query = query.where(User.is_active == is_active)
+    result = await db.execute(query)
+
+    counts: dict[str, int] = {role.value: 0 for role in UserRole}
+    counts["total"] = 0
+    for role_val, count in result.all():
+        key = role_val.value if hasattr(role_val, "value") else str(role_val)
+        counts[key] = count
+        counts["total"] += count
+    return counts
+
+
 async def get_primary_admin_id(db: AsyncSession) -> int | None:
     """Devuelve el id del admin "principal" — el de menor id. Es la cuenta
     protegida que nunca puede desactivarse. Si no hay admins (caso degradado)

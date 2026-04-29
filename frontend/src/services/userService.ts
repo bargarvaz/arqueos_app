@@ -96,6 +96,18 @@ const userService = {
     return data;
   },
 
+  /** Conteos agregados por rol, opcionalmente filtrados por is_active. */
+  getUserCounts: async (params?: { is_active?: boolean }): Promise<{
+    admin: number;
+    operations: number;
+    data_science: number;
+    etv: number;
+    total: number;
+  }> => {
+    const { data } = await api.get('/users/counts', { params });
+    return data;
+  },
+
   resetPassword: async (userId: number): Promise<{ temp_password: string; message: string }> => {
     const { data } = await api.post(`/users/${userId}/reset-password`);
     return data;

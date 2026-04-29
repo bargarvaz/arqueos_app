@@ -241,6 +241,19 @@ async def list_users(
     return PagedResponse.build(items, total, params)
 
 
+# ─── Conteos por rol (antes de /{user_id} para no ser capturado) ─────────────
+
+@router.get("/counts")
+async def get_user_counts(
+    db: DbSession,
+    _=AdminUser,
+    is_active: bool | None = Query(default=None),
+):
+    """Devuelve `{admin: N, operations: N, data_science: N, etv: N, total: N}`
+    opcionalmente filtrado por `is_active`."""
+    return await user_service.count_users_by_role(db, is_active=is_active)
+
+
 # ─── Rutas con /{user_id} AL FINAL para no capturar rutas específicas ─────────
 
 @router.get("/{user_id}", response_model=UserDetailResponse)

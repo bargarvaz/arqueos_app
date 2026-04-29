@@ -1,7 +1,7 @@
 // Gestión de usuarios — solo Admin
 import { useState, useEffect, useCallback } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { UserPlus, KeyRound, Vault, Edit2, Copy, Check } from 'lucide-react';
+import { UserPlus, KeyRound, Vault, Edit2, Copy, Check, Eye, EyeOff } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -74,8 +74,16 @@ export default function UserManagement() {
   const [pageSize, setPageSize] = useState(25);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
-  const [isActive, setIsActive] = useState<boolean | undefined>(undefined);
+  // Por defecto solo activos. El toggle "Ver inactivos" lo cambia a `false`.
+  const [showActive, setShowActive] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+  const [counts, setCounts] = useState<{
+    admin: number;
+    operations: number;
+    data_science: number;
+    etv: number;
+    total: number;
+  } | null>(null);
 
   // Crear usuario
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -147,19 +155,23 @@ export default function UserManagement() {
   const load = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await userService.listUsers({
-        page,
-        page_size: pageSize,
-        search: search || undefined,
-        role: roleFilter || undefined,
-        is_active: isActive,
-      });
+      const [data, counts] = await Promise.all([
+        userService.listUsers({
+          page,
+          page_size: pageSize,
+          search: search || undefined,
+          role: roleFilter || undefined,
+          is_active: showActive,
+        }),
+        userService.getUserCounts({ is_active: showActive }),
+      ]);
+      setCounts(counts);
       setUsers(data.items);
       setTotal(data.total);
     } finally {
       setIsLoading(false);
     }
-  }, [page, pageSize, search, roleFilter, isActive]);
+  }, [page, pageSize, search, roleFilter, showActive]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -469,8 +481,47 @@ export default function UserManagement() {
         </div>
       </div>
 
+      {/* Conteos por rol — del subset visible (activos o inactivos) */}
+      {counts && (
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <button
+            type="button"
+            onClick={() => { setRoleFilter(''); setPage(1); }}
+            className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
+              roleFilter === ''
+                ? 'bg-primary/10 border-primary/30 text-primary font-semibold'
+                : 'bg-background border-border text-text-secondary hover:bg-surface'
+            }`}
+          >
+            Total <span className="ml-1 font-mono">{counts.total}</span>
+          </button>
+          {ROLE_OPTIONS.map((r) => {
+            const value = counts[r.value as keyof typeof counts] as number;
+            const isSelected = roleFilter === r.value;
+            return (
+              <button
+                key={r.value}
+                type="button"
+                onClick={() => {
+                  setRoleFilter(isSelected ? '' : r.value);
+                  setPage(1);
+                }}
+                className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
+                  isSelected
+                    ? 'bg-primary/10 border-primary/30 text-primary font-semibold'
+                    : 'bg-background border-border text-text-secondary hover:bg-surface'
+                }`}
+                title={`Filtrar por ${r.label}`}
+              >
+                {r.label} <span className="ml-1 font-mono">{value}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Filtros */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
         <select
           value={roleFilter}
           onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }}
@@ -481,18 +532,31 @@ export default function UserManagement() {
             <option key={r.value} value={r.value}>{r.label}</option>
           ))}
         </select>
-        <select
-          value={isActive === undefined ? '' : String(isActive)}
-          onChange={(e) => {
-            setIsActive(e.target.value === '' ? undefined : e.target.value === 'true');
-            setPage(1);
-          }}
-          className="input w-36 text-sm"
+        <button
+          type="button"
+          onClick={() => { setShowActive((v) => !v); setPage(1); }}
+          className="btn-outline text-sm flex items-center gap-2"
+          title={
+            showActive ? 'Ver usuarios inactivos' : 'Volver a usuarios activos'
+          }
         >
-          <option value="">Todos</option>
-          <option value="true">Activos</option>
-          <option value="false">Inactivos</option>
-        </select>
+          {showActive ? (
+            <>
+              <EyeOff className="w-4 h-4" />
+              Ver inactivos
+            </>
+          ) : (
+            <>
+              <Eye className="w-4 h-4" />
+              Ver activos
+            </>
+          )}
+        </button>
+        <span className="text-xs text-text-muted ml-auto">
+          Mostrando: <strong className="text-text-primary">
+            {showActive ? 'activos' : 'inactivos'}
+          </strong>
+        </span>
       </div>
 
       <DataTable
