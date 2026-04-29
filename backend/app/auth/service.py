@@ -45,6 +45,8 @@ async def _check_credentials(db: AsyncSession, email: str, password: str) -> Use
     """Valida email + password aplicando lockout automático.
 
     Reglas:
+      - Cuentas con rol `admin` están EXENTAS del lockout (para que un admin
+        nunca quede fuera del sistema y pueda desbloquear a otros).
       - Si la cuenta tiene `locked_until` vigente → 401 con mensaje y minutos restantes.
       - Password OK → resetea `failed_login_attempts` y `locked_until`, devuelve user.
       - Password incorrecta → incrementa contador.
@@ -55,10 +57,14 @@ async def _check_credentials(db: AsyncSession, email: str, password: str) -> Use
 
     Lanza siempre `UnauthorizedError` cuando hay falla.
     """
+    from app.users.models import UserRole
+
     user = await _get_active_user_by_email(db, email)
     now = datetime.now(timezone.utc)
+    is_admin = bool(user and user.role == UserRole.admin)
 
-    if user and user.locked_until and user.locked_until > now:
+    # Solo bloquear cuentas no-admin
+    if user and not is_admin and user.locked_until and user.locked_until > now:
         remaining_min = max(1, int((user.locked_until - now).total_seconds() // 60) + 1)
         raise UnauthorizedError(
             f"Cuenta bloqueada por múltiples intentos fallidos. "
@@ -76,6 +82,12 @@ async def _check_credentials(db: AsyncSession, email: str, password: str) -> Use
     # ── A partir de aquí: credenciales inválidas ───────────────────────────
     if not user:
         # No existe (o está inactivo) → mensaje genérico, no incrementamos nada.
+        raise UnauthorizedError("Credenciales incorrectas.")
+
+    if is_admin:
+        # Admin: no se incrementa contador ni se bloquea, pero sí se loguea
+        # para detección de patrones de ataque (ya queda en audit_log al
+        # nivel del request handler).
         raise UnauthorizedError("Credenciales incorrectas.")
 
     user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
