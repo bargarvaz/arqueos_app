@@ -701,24 +701,22 @@ export default function ArqueoExplorer() {
 
   return (
     <div className="space-y-4">
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-1 text-sm text-text-muted">
-        <button
-          onClick={() => handleSelectVault(null)}
-          className={`hover:text-primary ${!selectedVault ? 'text-text-primary font-medium' : ''}`}
-        >
-          Explorador
-        </button>
-        {selectedVault && (
-          <>
-            <ChevronRight className="w-4 h-4 shrink-0" />
-            <span className="text-text-primary font-medium">
-              <span className="font-mono">{selectedVault.vault_code}</span>
-              <span className="ml-1 text-text-muted hidden sm:inline">— {selectedVault.vault_name}</span>
-            </span>
-          </>
-        )}
-      </nav>
+      {/* Breadcrumb solo cuando hay una bóveda seleccionada (drill-down) */}
+      {selectedVault && (
+        <nav className="flex items-center gap-1 text-sm text-text-muted">
+          <button
+            onClick={() => handleSelectVault(null)}
+            className="hover:text-primary"
+          >
+            ← Volver al listado
+          </button>
+          <ChevronRight className="w-4 h-4 shrink-0" />
+          <span className="text-text-primary font-medium">
+            <span className="font-mono">{selectedVault.vault_code}</span>
+            <span className="ml-1 text-text-muted hidden sm:inline">— {selectedVault.vault_name}</span>
+          </span>
+        </nav>
+      )}
 
       {resolving ? (
         <div className="flex items-center justify-center h-32">

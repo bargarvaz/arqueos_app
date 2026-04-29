@@ -481,7 +481,7 @@ export default function UserManagement() {
         </div>
       </div>
 
-      {/* Conteos por rol — del subset visible (activos o inactivos) */}
+      {/* Fila única: chips de conteo + toggle activos/inactivos a la derecha */}
       {counts && (
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <button
@@ -517,53 +517,53 @@ export default function UserManagement() {
               </button>
             );
           })}
+
+          {/* Bloque derecho: etiqueta + toggle */}
+          <div className="ml-auto flex items-center gap-3">
+            <span className="text-xs text-text-muted">
+              Mostrando: <strong className="text-text-primary">
+                {showActive ? 'activos' : 'inactivos'}
+              </strong>
+              {roleFilter && (
+                <>
+                  {' · '}rol:{' '}
+                  <strong className="text-text-primary">
+                    {ROLE_OPTIONS.find((r) => r.value === roleFilter)?.label ?? roleFilter}
+                  </strong>
+                  <button
+                    type="button"
+                    onClick={() => { setRoleFilter(''); setPage(1); }}
+                    className="ml-1.5 text-primary hover:underline"
+                    title="Quitar filtro por rol"
+                  >
+                    limpiar
+                  </button>
+                </>
+              )}
+            </span>
+            <button
+              type="button"
+              onClick={() => { setShowActive((v) => !v); setPage(1); }}
+              className="btn-outline text-sm flex items-center gap-2"
+              title={
+                showActive ? 'Ver usuarios inactivos' : 'Volver a usuarios activos'
+              }
+            >
+              {showActive ? (
+                <>
+                  <EyeOff className="w-4 h-4" />
+                  Ver inactivos
+                </>
+              ) : (
+                <>
+                  <Eye className="w-4 h-4" />
+                  Ver activos
+                </>
+              )}
+            </button>
+          </div>
         </div>
       )}
-
-      {/* Toggle activos / inactivos */}
-      <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <button
-          type="button"
-          onClick={() => { setShowActive((v) => !v); setPage(1); }}
-          className="btn-outline text-sm flex items-center gap-2"
-          title={
-            showActive ? 'Ver usuarios inactivos' : 'Volver a usuarios activos'
-          }
-        >
-          {showActive ? (
-            <>
-              <EyeOff className="w-4 h-4" />
-              Ver inactivos
-            </>
-          ) : (
-            <>
-              <Eye className="w-4 h-4" />
-              Ver activos
-            </>
-          )}
-        </button>
-        <span className="text-xs text-text-muted">
-          Mostrando: <strong className="text-text-primary">
-            {showActive ? 'activos' : 'inactivos'}
-          </strong>
-          {roleFilter && (
-            <>
-              {' · '}rol:{' '}
-              <strong className="text-text-primary">
-                {ROLE_OPTIONS.find((r) => r.value === roleFilter)?.label ?? roleFilter}
-              </strong>
-              <button
-                type="button"
-                onClick={() => { setRoleFilter(''); setPage(1); }}
-                className="ml-1.5 text-primary hover:underline"
-                title="Quitar filtro por rol"
-              >
-                limpiar
-              </button>
-            </>
-          )}
-        </span>
-      </div>
 
       <DataTable
         columns={columns}
