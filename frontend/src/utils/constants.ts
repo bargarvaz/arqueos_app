@@ -20,7 +20,6 @@ export const ROUTES = {
   DASHBOARD: '/internal/dashboard',
   ARQUEO_EXPLORER: '/internal/arqueos',
   VAULT_DIRECTORY: '/internal/vaults',
-  PERSONNEL_DIRECTORY: '/internal/personnel',
   ERROR_REPORTS: '/internal/error-reports',
   NOTIFICATIONS: '/internal/notifications',
   CLOSINGS: '/internal/saldos-finales',

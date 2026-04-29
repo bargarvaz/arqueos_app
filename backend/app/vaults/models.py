@@ -1,14 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Modelos: Vault, Branch, Personnel."""
+"""Modelos: Vault, Branch."""
 
 from datetime import date, datetime
-import enum
 
 from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
-    Enum,
     ForeignKey,
     Integer,
     Numeric,
@@ -20,11 +18,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
-class PersonnelType(str, enum.Enum):
-    manager = "manager"
-    treasurer = "treasurer"
-
-
 class Branch(Base):
     """Sucursales."""
 
@@ -32,29 +25,6 @@ class Branch(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-    )
-
-
-class Personnel(Base):
-    """Gerentes y tesoreros asignables a bóvedas."""
-
-    __tablename__ = "personnel"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    full_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    position: Mapped[str] = mapped_column(String(100), nullable=False)
-    personnel_type: Mapped[PersonnelType] = mapped_column(
-        Enum(PersonnelType, name="personnel_type"), nullable=False
-    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

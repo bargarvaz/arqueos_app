@@ -1,4 +1,4 @@
-// Servicio de dashboard y reportes
+// Servicio de métricas del dashboard
 import api from './api';
 
 export interface DashboardSummary {
@@ -30,19 +30,6 @@ export interface DenominationPoint {
   total: string;
 }
 
-export interface DailyBalanceRow {
-  header_id: number;
-  date: string;
-  vault_code: string;
-  vault_name: string;
-  company_name: string;
-  opening_balance: number;
-  closing_balance: number;
-  total_entries: number;
-  total_withdrawals: number;
-  status: string;
-}
-
 interface DashboardFilters {
   target_date?: string;
   date_from?: string;
@@ -51,7 +38,7 @@ interface DashboardFilters {
   vault_id?: number;
 }
 
-const reportService = {
+const dashboardService = {
   // ─── Dashboard ───────────────────────────────────────────────────────────────
   getSummary: async (params?: DashboardFilters): Promise<DashboardSummary> => {
     const { data } = await api.get('/dashboard/summary', { params });
@@ -76,41 +63,6 @@ const reportService = {
     const { data } = await api.get('/dashboard/denomination-distribution', { params });
     return data;
   },
-
-  // ─── Reportes ─────────────────────────────────────────────────────────────
-  getDailyBalances: async (params: {
-    date_from?: string;
-    date_to?: string;
-    company_id?: number;
-    vault_id?: number;
-    page?: number;
-    page_size?: number;
-  }) => {
-    const { data } = await api.get('/reports/daily-balances', { params });
-    return data;
-  },
-
-  downloadDailyBalances: async (params: {
-    date_from?: string;
-    date_to?: string;
-    company_id?: number;
-    vault_id?: number;
-  }): Promise<void> => {
-    const response = await api.get('/reports/daily-balances/download', {
-      params,
-      responseType: 'blob',
-    });
-    const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement('a');
-    link.href = url;
-    const from = params.date_from || 'inicio';
-    const to = params.date_to || 'hoy';
-    link.setAttribute('download', `saldos_${from}_${to}.xlsx`);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
-  },
 };
 
-export default reportService;
+export default dashboardService;

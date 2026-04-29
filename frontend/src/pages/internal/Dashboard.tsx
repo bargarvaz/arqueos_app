@@ -3,12 +3,13 @@ import { useEffect, useState } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
-import reportService, {
+import dashboardService, {
   DashboardSummary,
   MissingVault,
   WeeklyTrendPoint,
   DenominationPoint,
-} from '@/services/reportService';
+} from '@/services/dashboardService';
+
 import userService, { type Company } from '@/services/userService';
 import vaultService, { type Vault } from '@/services/vaultService';
 import { POLLING_INTERVAL_MS } from '@/utils/constants';
@@ -133,10 +134,10 @@ export default function Dashboard() {
           : filterDate || undefined,
     };
     Promise.all([
-      reportService.getSummary(baseFilters),
-      reportService.getMissingVaults(baseFilters),
-      reportService.getWeeklyTrend(trendFilters),
-      reportService.getDenominationDistribution(baseFilters),
+      dashboardService.getSummary(baseFilters),
+      dashboardService.getMissingVaults(baseFilters),
+      dashboardService.getWeeklyTrend(trendFilters),
+      dashboardService.getDenominationDistribution(baseFilters),
     ])
       .then(([s, m, t, d]) => {
         setSummary(s);

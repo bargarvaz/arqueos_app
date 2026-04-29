@@ -4,7 +4,6 @@
 from datetime import datetime
 from decimal import Decimal
 from pydantic import BaseModel, Field, model_validator
-from app.vaults.models import PersonnelType
 
 
 # ─── Denominaciones (saldo inicial / inventario) ──────────────────────────────
@@ -63,30 +62,6 @@ class BranchUpdate(BaseModel):
 class BranchResponse(BaseModel):
     id: int
     name: str
-    is_active: bool
-
-    model_config = {"from_attributes": True}
-
-
-# ─── Personnel ────────────────────────────────────────────────────────────────
-
-class PersonnelCreate(BaseModel):
-    full_name: str
-    position: str
-    personnel_type: PersonnelType
-
-
-class PersonnelUpdate(BaseModel):
-    full_name: str | None = None
-    position: str | None = None
-    is_active: bool | None = None
-
-
-class PersonnelResponse(BaseModel):
-    id: int
-    full_name: str
-    position: str
-    personnel_type: PersonnelType
     is_active: bool
 
     model_config = {"from_attributes": True}

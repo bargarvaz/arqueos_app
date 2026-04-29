@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Router de bóvedas y sucursales.
 
-IMPORTANTE: Las rutas específicas (/branches/*, /personnel/*)
-deben ir ANTES de /{vault_id} para que FastAPI no las capture como int.
+IMPORTANTE: Las rutas específicas (/branches/*, /bulk-import/*) deben ir
+ANTES de /{vault_id} para que FastAPI no las capture como int.
 """
 
 from datetime import date
@@ -14,7 +14,6 @@ from app.vaults import service as vault_service
 from app.vaults.schemas import (
     VaultCreate, VaultUpdate, VaultResponse, SetInitialBalanceRequest,
     BranchCreate, BranchUpdate, BranchResponse,
-    PersonnelResponse,
 )
 from app.common.pagination import PaginationParams, PagedResponse
 from app.dependencies import require_admin, get_current_user, DbSession
@@ -45,21 +44,6 @@ async def create_branch(body: BranchCreate, db: DbSession, admin=AdminUser):
 async def update_branch(branch_id: int, body: BranchUpdate, db: DbSession, admin=AdminUser):
     return await vault_service.update_branch(
         db, branch_id, name=body.name, is_active=body.is_active
-    )
-
-
-# ─── Personal (solo lectura — mantener para compatibilidad de datos) ──────────
-
-@router.get("/personnel/list", response_model=list[PersonnelResponse])
-async def list_personnel(
-    db: DbSession,
-    _=Depends(get_current_user),
-    personnel_type: str | None = Query(default=None),
-    include_inactive: bool = Query(default=False),
-    search: str | None = Query(default=None),
-):
-    return await vault_service.list_personnel(
-        db, personnel_type=personnel_type, include_inactive=include_inactive, search=search
     )
 
 

@@ -88,19 +88,6 @@ const explorerService = {
     link.remove();
     window.URL.revokeObjectURL(url);
   },
-
-  getAuditLog: async (params: {
-    user_id?: number;
-    action?: string;
-    entity_type?: string;
-    date_from?: string;
-    date_to?: string;
-    page?: number;
-    page_size?: number;
-  }) => {
-    const { data } = await api.get('/audit-log', { params });
-    return data;
-  },
 };
 
 export default explorerService;

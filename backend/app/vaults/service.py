@@ -9,7 +9,7 @@ from sqlalchemy import select, func, or_, and_
 
 import asyncio
 
-from app.vaults.models import Vault, Branch, Personnel
+from app.vaults.models import Vault, Branch
 from app.audit.service import log_action
 from app.common.exceptions import NotFoundError, ConflictError
 from app.common.pagination import PaginationParams
@@ -47,50 +47,6 @@ async def update_branch(db: AsyncSession, branch_id: int, **kwargs) -> Branch:
     await db.commit()
     await db.refresh(branch)
     return branch
-
-
-# ─── Personnel ────────────────────────────────────────────────────────────────
-
-async def create_personnel(
-    db: AsyncSession, full_name: str, position: str, personnel_type: str
-) -> Personnel:
-    p = Personnel(full_name=full_name, position=position, personnel_type=personnel_type)
-    db.add(p)
-    await db.commit()
-    await db.refresh(p)
-    return p
-
-
-async def list_personnel(
-    db: AsyncSession,
-    personnel_type: str | None = None,
-    include_inactive: bool = False,
-    search: str | None = None,
-) -> list[Personnel]:
-    query = select(Personnel)
-    conditions = []
-    if not include_inactive:
-        conditions.append(Personnel.is_active == True)
-    if personnel_type:
-        conditions.append(Personnel.personnel_type == personnel_type)
-    if search:
-        conditions.append(Personnel.full_name.ilike(f"%{search}%"))
-    if conditions:
-        query = query.where(and_(*conditions))
-    result = await db.execute(query.order_by(Personnel.full_name))
-    return list(result.scalars().all())
-
-
-async def update_personnel(db: AsyncSession, person_id: int, **kwargs) -> Personnel:
-    p = await db.get(Personnel, person_id)
-    if not p:
-        raise NotFoundError("Personal")
-    for k, v in kwargs.items():
-        if v is not None:
-            setattr(p, k, v)
-    await db.commit()
-    await db.refresh(p)
-    return p
 
 
 # ─── Vault ────────────────────────────────────────────────────────────────────
