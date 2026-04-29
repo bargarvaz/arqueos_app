@@ -181,6 +181,13 @@ async def update_user(
     if "puesto" in explicit:
         user.puesto = puesto
     if "is_active" in explicit and is_active is not None:
+        # Los administradores no pueden desactivarse: protege contra
+        # autoexclusión accidental y mantiene siempre al menos un canal de
+        # acceso al sistema.
+        if user.role == UserRole.admin and not is_active:
+            raise BusinessRuleError(
+                "Las cuentas con rol administrador no pueden desactivarse."
+            )
         user.is_active = is_active
     if "company_id" in explicit:
         user.company_id = company_id

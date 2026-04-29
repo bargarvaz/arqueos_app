@@ -416,16 +416,25 @@ export default function UserManagement() {
               <KeyRound className="w-3.5 h-3.5" />
               Reset
             </button>
-            <button
-              onClick={() => handleToggleActive(u)}
-              className={`flex items-center gap-1 text-xs px-2 py-1 rounded ${
-                u.is_active
-                  ? 'text-status-error hover:bg-status-error-light'
-                  : 'text-status-success hover:bg-status-success-light'
-              }`}
-            >
-              {u.is_active ? 'Desactivar' : 'Activar'}
-            </button>
+            {u.role === 'admin' ? (
+              <span
+                className="flex items-center gap-1 text-xs text-text-muted px-2 py-1"
+                title="Las cuentas administrador no pueden desactivarse."
+              >
+                Protegida
+              </span>
+            ) : (
+              <button
+                onClick={() => handleToggleActive(u)}
+                className={`flex items-center gap-1 text-xs px-2 py-1 rounded ${
+                  u.is_active
+                    ? 'text-status-error hover:bg-status-error-light'
+                    : 'text-status-success hover:bg-status-success-light'
+                }`}
+              >
+                {u.is_active ? 'Desactivar' : 'Activar'}
+              </button>
+            )}
           </div>
         );
       },
