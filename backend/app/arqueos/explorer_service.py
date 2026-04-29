@@ -60,6 +60,16 @@ async def explore_records(
     if not include_counterparts:
         query = query.where(ArqueoRecord.is_counterpart == False)
 
+    # Respeta el reset de saldo: arqueos anteriores al reset son historia
+    # previa y no se reportan. El día del reset sí cuenta (ahí ya hay actividad
+    # con el nuevo saldo inicial).
+    query = query.where(
+        or_(
+            Vault.balance_reset_at.is_(None),
+            ArqueoHeader.arqueo_date >= Vault.balance_reset_at,
+        )
+    )
+
     if allowed_vault_ids is not None:
         if not allowed_vault_ids:
             # ETV sin asignaciones: no debe ver nada
@@ -194,6 +204,10 @@ async def get_vault_day_balances(
     en una fecha dada. Si no hay header ese día, opening = último closing anterior
     (o initial_balance si es la primera vez).
 
+    Una bóveda solo aparece si ya existía el `target_date`: día ancla =
+    max(creación, balance_reset_at) <= target_date. El "último closing"
+    también respeta el reset (ignora arqueos anteriores).
+
     Si `allowed_vault_ids` se pasa (ETV), solo devuelve esas bóvedas.
     """
     vaults_q = select(Vault).where(Vault.is_active == True)
@@ -202,7 +216,16 @@ async def get_vault_day_balances(
             return []
         vaults_q = vaults_q.where(Vault.id.in_(allowed_vault_ids))
     vaults_result = await db.execute(vaults_q.order_by(Vault.vault_code))
-    vaults = list(vaults_result.scalars().all())
+    all_vaults = list(vaults_result.scalars().all())
+
+    # Filtrar por día ancla
+    def _anchor(v: Vault) -> date:
+        created = v.created_at.date() if hasattr(v.created_at, "date") else v.created_at
+        if v.balance_reset_at and v.balance_reset_at > created:
+            return v.balance_reset_at
+        return created
+
+    vaults = [v for v in all_vaults if _anchor(v) <= target_date]
     if not vaults:
         return []
 
@@ -219,8 +242,9 @@ async def get_vault_day_balances(
         h.vault_id: h for h in headers_result.scalars().all()
     }
 
-    # Para bóvedas sin header hoy: buscar el closing_balance del día más reciente anterior
-    vaults_without = [vid for vid in vault_ids if vid not in today_headers]
+    # Para bóvedas sin header hoy: buscar el closing_balance del día más reciente
+    # anterior, respetando balance_reset_at (no se considera historia previa).
+    vaults_without = [v for v in vaults if v.id not in today_headers]
     last_closing_map: dict[int, Decimal] = {}
     if vaults_without:
         subq = (
@@ -228,9 +252,14 @@ async def get_vault_day_balances(
                 ArqueoHeader.vault_id,
                 func.max(ArqueoHeader.arqueo_date).label("last_date"),
             )
+            .join(Vault, Vault.id == ArqueoHeader.vault_id)
             .where(
-                ArqueoHeader.vault_id.in_(vaults_without),
+                ArqueoHeader.vault_id.in_([v.id for v in vaults_without]),
                 ArqueoHeader.arqueo_date < target_date,
+                or_(
+                    Vault.balance_reset_at.is_(None),
+                    ArqueoHeader.arqueo_date >= Vault.balance_reset_at,
+                ),
             )
             .group_by(ArqueoHeader.vault_id)
             .subquery()

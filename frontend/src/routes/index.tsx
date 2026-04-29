@@ -20,10 +20,10 @@ const CatalogManager = lazy(() => import('@/pages/admin/CatalogManager'));
 const UserManagement = lazy(() => import('@/pages/admin/UserManagement'));
 const AuditLog = lazy(() => import('@/pages/admin/AuditLog'));
 const VaultDirectory = lazy(() => import('@/pages/internal/VaultDirectory'));
-const Reports = lazy(() => import('@/pages/internal/Reports'));
 const ErrorReports = lazy(() => import('@/pages/internal/ErrorReports'));
 const Dashboard = lazy(() => import('@/pages/internal/Dashboard'));
 const ArqueoExplorer = lazy(() => import('@/pages/internal/ArqueoExplorer'));
+const ClosingsTable = lazy(() => import('@/pages/closings/ClosingsTable'));
 
 // Lazy imports — ETV
 const EtvVaults = lazy(() => import('@/pages/etv/EtvVaults'));
@@ -100,8 +100,8 @@ export default function AppRouter() {
           <Route path={ROUTES.DASHBOARD} element={<Lazy><Dashboard /></Lazy>} />
           <Route path={ROUTES.ARQUEO_EXPLORER} element={<Lazy><ArqueoExplorer /></Lazy>} />
           <Route path={ROUTES.VAULT_DIRECTORY} element={<Lazy><VaultDirectory /></Lazy>} />
-          <Route path={ROUTES.REPORTS} element={<Lazy><Reports /></Lazy>} />
           <Route path={ROUTES.ERROR_REPORTS} element={<Lazy><ErrorReports /></Lazy>} />
+          <Route path={ROUTES.CLOSINGS} element={<Lazy><ClosingsTable /></Lazy>} />
           <Route
             path={ROUTES.USER_MANAGEMENT}
             element={
@@ -148,6 +148,7 @@ export default function AppRouter() {
           <Route path={`${ROUTES.ETV_MODIFICATIONS}/:headerId`} element={<Lazy><ModificationForm /></Lazy>} />
           <Route path={ROUTES.ETV_ERROR_REPORTS} element={<Lazy><EtvErrorReports /></Lazy>} />
           <Route path={ROUTES.ETV_EXPLORER} element={<Lazy><ArqueoExplorer /></Lazy>} />
+          <Route path={ROUTES.ETV_CLOSINGS} element={<Lazy><ClosingsTable /></Lazy>} />
           <Route path={ROUTES.MY_SESSIONS} element={<Lazy><MySessions /></Lazy>} />
         </Route>
 

@@ -34,6 +34,7 @@ const sumDenominations = (d: Record<string, string>, prefix = ''): number =>
 
 const editSchema = z.object({
   vault_name: z.string().min(2, 'Nombre requerido.').max(150),
+  company_id: z.number({ invalid_type_error: 'Selecciona ETV.' }).min(1, 'ETV requerida.'),
   empresa_id: z.number().nullable().optional(),
   manager_id: z.number().nullable().optional(),
   treasurer_id: z.number().nullable().optional(),
@@ -90,9 +91,11 @@ export default function VaultDirectory() {
   const selectedCompanyId = useWatch({ control: createForm.control, name: 'company_id' });
   const createEmpresas = allEmpresas.filter(e => e.etv_id === selectedCompanyId && e.is_active);
 
-  // Empresas filtradas para el form de edición (por ETV de la bóveda editada)
-  const editEmpresas = editTarget
-    ? allEmpresas.filter(e => e.etv_id === editTarget.company_id && e.is_active)
+  // Empresas filtradas según la ETV seleccionada actualmente en el form de edición
+  // (no la ETV original de la bóveda, así el dropdown de empresa reacciona al cambio).
+  const editSelectedCompanyId = useWatch({ control: editForm.control, name: 'company_id' });
+  const editEmpresas = editSelectedCompanyId
+    ? allEmpresas.filter(e => e.etv_id === editSelectedCompanyId && e.is_active)
     : [];
 
   const load = useCallback(async () => {
@@ -128,7 +131,22 @@ export default function VaultDirectory() {
   // Limpiar empresa al cambiar ETV en creación
   useEffect(() => {
     createForm.resetField('empresa_id');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCompanyId]);
+
+  // Limpiar empresa al cambiar ETV en edición (solo si la empresa actual no
+  // pertenece a la ETV nueva). Evita pisar la empresa al abrir el modal con
+  // los datos originales.
+  useEffect(() => {
+    if (!editSelectedCompanyId || !editTarget) return;
+    const currentEmpresa = editForm.getValues('empresa_id');
+    if (currentEmpresa == null) return;
+    const matches = allEmpresas.find(
+      (e) => e.id === currentEmpresa && e.etv_id === editSelectedCompanyId,
+    );
+    if (!matches) editForm.setValue('empresa_id', null, { shouldValidate: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editSelectedCompanyId]);
 
   const handleDeactivate = async (vault: Vault) => {
     if (!confirm(`¿Desactivar la bóveda ${vault.vault_code} — ${vault.vault_name}?`)) return;
@@ -166,6 +184,7 @@ export default function VaultDirectory() {
     setEditDenoms(denoms);
     editForm.reset({
       vault_name: vault.vault_name,
+      company_id: vault.company_id,
       empresa_id: vault.empresa_id ?? null,
       manager_id: vault.manager_id ?? null,
       treasurer_id: vault.treasurer_id ?? null,
@@ -178,6 +197,7 @@ export default function VaultDirectory() {
     try {
       await vaultService.updateVault(editTarget.id, {
         vault_name: data.vault_name,
+        company_id: data.company_id,
         empresa_id: data.empresa_id ?? null,
         manager_id: data.manager_id ?? null,
         treasurer_id: data.treasurer_id ?? null,
@@ -518,16 +538,32 @@ export default function VaultDirectory() {
                     <p className="text-status-error text-xs mt-1">{editForm.formState.errors.vault_name.message}</p>
                   )}
                 </div>
-                <div className="col-span-2">
+                <div>
+                  <label className="label">ETV</label>
+                  <select
+                    className={editForm.formState.errors.company_id ? 'input-error' : 'input'}
+                    {...editForm.register('company_id', { valueAsNumber: true })}
+                  >
+                    <option value="">Seleccionar...</option>
+                    {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  {editForm.formState.errors.company_id && (
+                    <p className="text-status-error text-xs mt-1">{editForm.formState.errors.company_id.message}</p>
+                  )}
+                </div>
+                <div>
                   <label className="label">Empresa (opcional)</label>
                   <select
-                    className="input"
-                    {...editForm.register('empresa_id', { valueAsNumber: true })}
-                    disabled={editEmpresas.length === 0}
+                    className={editForm.formState.errors.empresa_id ? 'input-error' : 'input'}
+                    {...editForm.register('empresa_id', { setValueAs: (v) => (v === '' || v == null ? null : Number(v)) })}
+                    disabled={!editSelectedCompanyId || editEmpresas.length === 0}
                   >
                     <option value="">Ninguna</option>
                     {editEmpresas.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                   </select>
+                  {editForm.formState.errors.empresa_id && (
+                    <p className="text-status-error text-xs mt-1">{editForm.formState.errors.empresa_id.message}</p>
+                  )}
                 </div>
                 <div>
                   <label className="label">Gerente</label>

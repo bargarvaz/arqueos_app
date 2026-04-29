@@ -58,15 +58,30 @@ export default function ExternalLogin() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-surface px-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-surface-alt px-4 relative overflow-hidden">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -top-40 -left-40 w-[420px] h-[420px] rounded-full opacity-[0.10] blur-3xl"
+        style={{ background: 'radial-gradient(circle, #B8860B 0%, transparent 70%)' }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -bottom-40 -right-40 w-[420px] h-[420px] rounded-full opacity-[0.07] blur-3xl"
+        style={{ background: 'radial-gradient(circle, #4A5D23 0%, transparent 70%)' }}
+      />
+
+      <div className="w-full max-w-md relative">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-secondary rounded-full mb-4">
-            <Shield className="w-8 h-8 text-white" />
+          <div className="inline-flex items-center justify-center w-14 h-14 bg-secondary rounded-2xl mb-5 shadow-card">
+            <Shield className="w-6 h-6 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-text-primary">Sistema de Arqueos</h1>
-          <p className="text-text-secondary text-sm mt-1">Acceso para empresas ETV</p>
+          <h1 className="text-[26px] font-semibold text-text-primary tracking-tight">
+            Sistema de Arqueos
+          </h1>
+          <p className="text-text-secondary text-sm mt-1.5">
+            Acceso para empresas ETV
+          </p>
         </div>
 
         <div className="card">

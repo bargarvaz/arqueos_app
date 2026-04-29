@@ -104,6 +104,39 @@ export interface PublishArqueoPayload {
   updated_at: string;
 }
 
+export interface DailyClosingItem {
+  arqueo_date: string;
+  status: 'draft' | 'published' | 'locked';
+  closing_balance: string;
+  is_anchor?: boolean;
+  bill_1000: string;
+  bill_500: string;
+  bill_200: string;
+  bill_100: string;
+  bill_50: string;
+  bill_20: string;
+  coin_100: string;
+  coin_50: string;
+  coin_20: string;
+  coin_10: string;
+  coin_5: string;
+  coin_2: string;
+  coin_1: string;
+  coin_050: string;
+  coin_020: string;
+  coin_010: string;
+}
+
+export interface MonthlyClosingsResponse {
+  vault_id: number;
+  vault_code: string;
+  vault_name: string;
+  year: number;
+  month: number;
+  unmigrated: boolean;
+  items: DailyClosingItem[];
+}
+
 const arqueoService = {
   // ─── ETV ────────────────────────────────────────────────────────────────────
   getMyVaults: async (): Promise<VaultStatus[]> => {
@@ -146,6 +179,18 @@ const arqueoService = {
     page_size?: number;
   }) => {
     const { data } = await api.get('/arqueos/headers', { params });
+    return data;
+  },
+
+  // ─── Saldos finales (cierres mensuales por bóveda) ─────────────────────────
+  getMonthlyClosings: async (
+    vault_id: number,
+    year: number,
+    month: number,
+  ): Promise<MonthlyClosingsResponse> => {
+    const { data } = await api.get(`/arqueos/closings/${vault_id}`, {
+      params: { year, month },
+    });
     return data;
   },
 

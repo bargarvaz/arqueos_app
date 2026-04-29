@@ -109,6 +109,7 @@ class VaultCreate(BaseModel):
 
 class VaultUpdate(BaseModel):
     vault_name: str | None = None
+    company_id: int | None = None  # ETV (transportadora)
     empresa_id: int | None = None
     manager_id: int | None = None
     treasurer_id: int | None = None

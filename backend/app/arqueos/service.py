@@ -46,15 +46,25 @@ async def _get_opening_balance(db: AsyncSession, vault_id: int, arqueo_date: dat
     Calcula el saldo de apertura del día.
     = closing_balance del día anterior más reciente.
     Si no hay días anteriores, usa vaults.initial_balance.
+
+    Si la bóveda tuvo un reset de saldo (`balance_reset_at`), solo se consideran
+    los headers POSTERIORES a esa fecha. Si no existe header posterior, la
+    apertura se calcula con `vault.initial_balance` actual.
     """
-    # Buscar el header del día anterior más reciente
+    from app.vaults.models import Vault
+    vault = await db.get(Vault, vault_id)
+
+    conditions = [
+        ArqueoHeader.vault_id == vault_id,
+        ArqueoHeader.arqueo_date < arqueo_date,
+        ArqueoHeader.status != ArqueoStatus.draft,
+    ]
+    if vault and vault.balance_reset_at is not None:
+        conditions.append(ArqueoHeader.arqueo_date >= vault.balance_reset_at)
+
     result = await db.execute(
         select(ArqueoHeader.closing_balance)
-        .where(
-            ArqueoHeader.vault_id == vault_id,
-            ArqueoHeader.arqueo_date < arqueo_date,
-            ArqueoHeader.status != ArqueoStatus.draft,
-        )
+        .where(*conditions)
         .order_by(ArqueoHeader.arqueo_date.desc())
         .limit(1)
     )
@@ -63,9 +73,6 @@ async def _get_opening_balance(db: AsyncSession, vault_id: int, arqueo_date: dat
     if prev_closing is not None:
         return Decimal(str(prev_closing))
 
-    # Primer arqueo: usar initial_balance de la bóveda
-    from app.vaults.models import Vault
-    vault = await db.get(Vault, vault_id)
     if vault:
         return Decimal(str(vault.initial_balance))
     return Decimal("0")
@@ -212,8 +219,14 @@ async def list_headers(
     page: int = 1,
     page_size: int = 25,
 ) -> tuple[list[ArqueoHeader], int]:
-    query = select(ArqueoHeader)
-    conditions = []
+    from app.vaults.models import Vault as _Vault
+
+    query = select(ArqueoHeader).join(_Vault, _Vault.id == ArqueoHeader.vault_id)
+    conditions = [
+        # Respeta el reset de saldo: oculta headers anteriores al día del reset
+        (_Vault.balance_reset_at.is_(None))
+        | (ArqueoHeader.arqueo_date >= _Vault.balance_reset_at),
+    ]
 
     if vault_ids is not None:
         if not vault_ids:
@@ -228,8 +241,7 @@ async def list_headers(
     if date_to:
         conditions.append(ArqueoHeader.arqueo_date <= date_to)
 
-    if conditions:
-        query = query.where(and_(*conditions))
+    query = query.where(and_(*conditions))
 
     count_q = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_q)).scalar_one()
@@ -697,10 +709,21 @@ async def get_denomination_inventory(
         # Marcador: caller no debe validar
         return {f: None for f in DENOMINATION_FIELDS}
 
-    # Sumar registros activos no-contrapartida hasta before_date (exclusive)
+    # Sumar registros activos no-contrapartida hasta before_date (exclusive).
+    # Si hubo reset de saldo, ignoramos arqueos anteriores o iguales a esa fecha.
     inventory = dict(initial)
 
     record_cols = [getattr(ArqueoRecord, f) for f in DENOMINATION_FIELDS]
+    where_clauses = [
+        ArqueoHeader.vault_id == vault_id,
+        ArqueoHeader.arqueo_date < before_date,
+        ArqueoHeader.status != ArqueoStatus.draft,
+        ArqueoRecord.is_active == True,
+        ArqueoRecord.is_counterpart == False,
+    ]
+    if vault.balance_reset_at is not None:
+        where_clauses.append(ArqueoHeader.arqueo_date >= vault.balance_reset_at)
+
     rows = await db.execute(
         select(
             ArqueoRecord.entries,
@@ -708,13 +731,7 @@ async def get_denomination_inventory(
             *record_cols,
         )
         .join(ArqueoHeader, ArqueoHeader.id == ArqueoRecord.arqueo_header_id)
-        .where(
-            ArqueoHeader.vault_id == vault_id,
-            ArqueoHeader.arqueo_date < before_date,
-            ArqueoHeader.status != ArqueoStatus.draft,
-            ArqueoRecord.is_active == True,
-            ArqueoRecord.is_counterpart == False,
-        )
+        .where(*where_clauses)
     )
 
     for row in rows.all():
@@ -726,6 +743,135 @@ async def get_denomination_inventory(
             inventory[field] += sign * value
 
     return inventory
+
+
+# ─── Saldos finales mensuales (cierres por día) ───────────────────────────────
+
+async def get_monthly_closings(
+    db: AsyncSession,
+    vault_id: int,
+    year: int,
+    month: int,
+) -> dict[str, Any]:
+    """
+    Construye los saldos finales (cierre por denominación + total) de cada día
+    publicado del mes para la bóveda dada.
+
+    Reglas:
+      - Una bóveda solo "existe" desde su día ancla: el más reciente entre su
+        fecha de creación y un eventual reset de saldo. Días anteriores al
+        ancla nunca se reportan.
+      - Si el día ancla cae dentro del mes consultado y no hay arqueo publicado
+        ese día, se inserta una fila sintética con el saldo inicial declarado
+        (bandera `is_anchor=True`).
+      - Días posteriores al ancla solo aparecen cuando tienen arqueo publicado
+        o locked.
+      - Si la bóveda está "sin migrar" (initial_balance > 0 con denominaciones
+        en 0), `unmigrated=True` y las denominaciones del corrido reflejan
+        únicamente los movimientos posteriores, no el stock real.
+    """
+    from app.vaults.models import Vault
+    from calendar import monthrange
+
+    if not (1 <= month <= 12):
+        raise ValidationAppError("Mes inválido (debe estar entre 1 y 12).")
+
+    vault = await db.get(Vault, vault_id)
+    if not vault:
+        raise NotFoundError("Bóveda")
+
+    first_day = date(year, month, 1)
+    last_day = date(year, month, monthrange(year, month)[1])
+
+    # ─── Día ancla: max(creación, reset) ─────────────────────────────────────
+    created_date = (
+        vault.created_at.date() if isinstance(vault.created_at, datetime)
+        else vault.created_at
+    )
+    anchor_date = vault.balance_reset_at or created_date
+    if vault.balance_reset_at and created_date and vault.balance_reset_at < created_date:
+        anchor_date = created_date
+
+    # Si la bóveda aún no existe en este mes → respuesta vacía
+    if anchor_date > last_day:
+        return {
+            "vault_id": vault.id,
+            "vault_code": vault.vault_code,
+            "vault_name": vault.vault_name,
+            "year": year,
+            "month": month,
+            "unmigrated": False,
+            "items": [],
+        }
+
+    # ─── Inventario al inicio del mes ────────────────────────────────────────
+    base_inventory = await get_denomination_inventory(db, vault_id, first_day)
+    unmigrated = any(v is None for v in base_inventory.values())
+    running = {f: Decimal("0") if base_inventory[f] is None else base_inventory[f]
+               for f in DENOMINATION_FIELDS}
+
+    # ─── Headers del mes (después del ancla, no draft) ───────────────────────
+    header_conditions = [
+        ArqueoHeader.vault_id == vault_id,
+        ArqueoHeader.arqueo_date >= max(first_day, anchor_date),
+        ArqueoHeader.arqueo_date <= last_day,
+        ArqueoHeader.status != ArqueoStatus.draft,
+    ]
+    headers_result = await db.execute(
+        select(ArqueoHeader)
+        .where(*header_conditions)
+        .order_by(ArqueoHeader.arqueo_date.asc())
+    )
+    headers = list(headers_result.scalars().all())
+
+    items: list[dict[str, Any]] = []
+
+    # ─── Fila sintética del día ancla, si cae en este mes y no tiene arqueo ─
+    if first_day <= anchor_date <= last_day:
+        anchor_has_header = any(h.arqueo_date == anchor_date for h in headers)
+        if not anchor_has_header:
+            anchor_item: dict[str, Any] = {
+                "arqueo_date": anchor_date,
+                "status": ArqueoStatus.published,  # placeholder para el schema
+                "closing_balance": Decimal(str(vault.initial_balance or 0)),
+                "is_anchor": True,
+            }
+            for f in DENOMINATION_FIELDS:
+                anchor_item[f] = running[f]
+            items.append(anchor_item)
+
+    # ─── Filas reales de arqueos ─────────────────────────────────────────────
+    for h in headers:
+        for r in h.records:
+            if not r.is_active or r.is_counterpart:
+                continue
+            entries = Decimal(str(r.entries or 0))
+            sign = Decimal("1") if entries > 0 else Decimal("-1")
+            for f in DENOMINATION_FIELDS:
+                val = Decimal(str(getattr(r, f) or 0))
+                running[f] += sign * val
+
+        item: dict[str, Any] = {
+            "arqueo_date": h.arqueo_date,
+            "status": h.status,
+            "closing_balance": Decimal(str(h.closing_balance or 0)),
+            "is_anchor": False,
+        }
+        for f in DENOMINATION_FIELDS:
+            item[f] = running[f]
+        items.append(item)
+
+    items.sort(key=lambda x: x["arqueo_date"])
+
+    return {
+        "vault_id": vault.id,
+        "vault_code": vault.vault_code,
+        "vault_name": vault.vault_name,
+        "year": year,
+        "month": month,
+        "unmigrated": unmigrated,
+        "items": items,
+    }
 
 
 DENOM_LABELS = {

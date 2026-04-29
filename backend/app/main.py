@@ -19,7 +19,6 @@ from app.arqueos.router import router as arqueos_router
 from app.modifications.router import router as modifications_router
 from app.documents.router import router as documents_router
 from app.dashboard.router import router as dashboard_router
-from app.reports.router import router as reports_router
 from app.notifications.router import router as notifications_router
 from app.error_reports.router import router as error_reports_router
 from app.arqueos.explorer_router import router as explorer_router
@@ -90,7 +89,6 @@ app.include_router(arqueos_router, prefix=API_PREFIX)
 app.include_router(modifications_router, prefix=API_PREFIX)
 app.include_router(documents_router, prefix=API_PREFIX)
 app.include_router(dashboard_router, prefix=API_PREFIX)
-app.include_router(reports_router, prefix=API_PREFIX)
 app.include_router(notifications_router, prefix=API_PREFIX)
 app.include_router(error_reports_router, prefix=API_PREFIX)
 app.include_router(explorer_router, prefix=API_PREFIX)

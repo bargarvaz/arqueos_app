@@ -117,3 +117,41 @@ class ArqueoHeaderResponse(BaseModel):
 
 class ArqueoHeaderWithRecordsResponse(ArqueoHeaderResponse):
     records: list[ArqueoRecordResponse] = []
+
+
+# ─── Saldos finales (closings mensuales por bóveda) ───────────────────────────
+
+class DailyClosingItem(BaseModel):
+    """Cierre diario de una bóveda con desglose por denominación."""
+    arqueo_date: date
+    status: ArqueoStatus
+    closing_balance: Decimal
+    # Marca el día "ancla" (creación o reset de saldo). En esos días no hay
+    # cierre real: lo que se muestra es el saldo inicial declarado por admin.
+    is_anchor: bool = False
+    bill_1000: Decimal
+    bill_500: Decimal
+    bill_200: Decimal
+    bill_100: Decimal
+    bill_50: Decimal
+    bill_20: Decimal
+    coin_100: Decimal
+    coin_50: Decimal
+    coin_20: Decimal
+    coin_10: Decimal
+    coin_5: Decimal
+    coin_2: Decimal
+    coin_1: Decimal
+    coin_050: Decimal
+    coin_020: Decimal
+    coin_010: Decimal
+
+
+class MonthlyClosingsResponse(BaseModel):
+    vault_id: int
+    vault_code: str
+    vault_name: str
+    year: int
+    month: int
+    unmigrated: bool = False
+    items: list[DailyClosingItem] = []

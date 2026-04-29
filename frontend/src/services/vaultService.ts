@@ -90,6 +90,7 @@ const vaultService = {
 
   updateVault: async (id: number, body: Partial<{
     vault_name: string;
+    company_id: number;
     empresa_id: number | null;
     manager_id: number | null;
     treasurer_id: number | null;

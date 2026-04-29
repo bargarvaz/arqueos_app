@@ -165,6 +165,72 @@ async def notify_excess_certificates(
     )
 
 
+async def notify_vault_balance_reset(
+    db: AsyncSession,
+    vault_id: int,
+    by_user_id: int | None = None,
+) -> None:
+    """
+    Notifica que el admin reescribió las denominaciones iniciales de una
+    bóveda (reset de saldo). Destinatarios: operations + admin activos +
+    todos los usuarios ETV asignados a la bóveda.
+    """
+    from app.vaults.models import Vault
+    from app.users.models import UserVaultAssignment
+
+    vault = await db.get(Vault, vault_id)
+    code = vault.vault_code if vault else f"#{vault_id}"
+    name = vault.vault_name if vault else ""
+    new_balance = vault.initial_balance if vault else None
+
+    title = f"Saldo de bóveda reescrito — {code}"
+    msg_lines = [
+        f"Un administrador reescribió las denominaciones iniciales de la bóveda "
+        f"{code}{f' ({name})' if name else ''}.",
+    ]
+    if new_balance is not None:
+        msg_lines.append(f"Nuevo saldo de inicio: ${new_balance}.")
+    msg_lines.append(
+        "Los cálculos de apertura e inventario tomarán este nuevo valor como "
+        "punto de partida desde hoy."
+    )
+    message = " ".join(msg_lines)
+
+    # 1) Operations + admin
+    await notify_operations_and_admin(
+        db,
+        notification_type=NotificationType.vault_balance_reset,
+        title=title,
+        message=message,
+        entity_type="vault",
+        entity_id=vault_id,
+        sender_id=by_user_id,
+    )
+
+    # 2) ETVs asignados a la bóveda (activos)
+    result = await db.execute(
+        select(UserVaultAssignment.user_id)
+        .join(User, User.id == UserVaultAssignment.user_id)
+        .where(
+            UserVaultAssignment.vault_id == vault_id,
+            UserVaultAssignment.is_active == True,
+            User.is_active == True,
+        )
+    )
+    etv_ids = {row[0] for row in result.all()}
+    for uid in etv_ids:
+        await create_notification(
+            db,
+            recipient_id=uid,
+            notification_type=NotificationType.vault_balance_reset,
+            title=title,
+            message=message,
+            sender_id=by_user_id,
+            entity_type="vault",
+            entity_id=vault_id,
+        )
+
+
 async def notify_vault_reactivated(
     db: AsyncSession,
     vault_id: int,

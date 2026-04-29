@@ -4,7 +4,7 @@ import api from './api';
 export type NotificationType =
   | 'arqueo_published' | 'correction_made' | 'missing_arqueo'
   | 'weekend_upload' | 'negative_balance' | 'excess_certificates'
-  | 'vault_reactivated' | 'password_reset'
+  | 'vault_reactivated' | 'vault_balance_reset' | 'password_reset'
   | 'error_reported' | 'error_response' | 'general';
 
 export interface Notification {

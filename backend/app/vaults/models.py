@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """Modelos: Vault, Branch, Personnel."""
 
-from datetime import datetime
+from datetime import date, datetime
 import enum
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
@@ -119,6 +120,10 @@ class Vault(Base):
     reactivated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Fecha del último reset de saldo (admin reescribió denominaciones iniciales).
+    # A partir de esta fecha (exclusiva) los cálculos de apertura e inventario
+    # ignoran cualquier arqueo anterior.
+    balance_reset_at: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

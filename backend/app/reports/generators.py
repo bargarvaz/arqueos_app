@@ -2,7 +2,6 @@
 """Generadores de archivos XLSX para reportes descargables."""
 
 import io
-from datetime import date
 from typing import Any
 
 import openpyxl
@@ -34,59 +33,6 @@ def _auto_width(ws) -> None:
         ws.column_dimensions[get_column_letter(col_cells[0].column)].width = min(
             max_len + 4, 50
         )
-
-
-def generate_daily_balances_xlsx(
-    rows: list[dict[str, Any]],
-    date_from: date | None,
-    date_to: date | None,
-) -> bytes:
-    """
-    Genera un XLSX de saldos diarios por bóveda.
-    """
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Saldos Diarios"
-
-    # Metadatos
-    ws["A1"] = "Reporte: Saldos Diarios por Bóveda"
-    ws["A1"].font = Font(bold=True, size=12)
-    ws["A2"] = f"Periodo: {date_from or 'inicio'} al {date_to or 'hoy'}"
-    ws["A2"].font = Font(italic=True, color="666666")
-    ws.append([])  # Fila 3 vacía
-
-    # Encabezados
-    headers = [
-        "Fecha", "Empresa", "Código Bóveda", "Bóveda",
-        "Apertura", "Entradas", "Salidas", "Cierre", "Estado"
-    ]
-    ws.append(headers)
-    _style_header_row(ws, 4, len(headers))
-
-    # Datos
-    for row in rows:
-        ws.append([
-            row.get("date", ""),
-            row.get("company_name", ""),
-            row.get("vault_code", ""),
-            row.get("vault_name", ""),
-            row.get("opening_balance", 0),
-            row.get("total_entries", 0),
-            row.get("total_withdrawals", 0),
-            row.get("closing_balance", 0),
-            row.get("status", ""),
-        ])
-
-    # Formato numérico para columnas monetarias (E:H)
-    for row_cells in ws.iter_rows(min_row=5, min_col=5, max_col=8):
-        for cell in row_cells:
-            cell.number_format = '#,##0.00'
-
-    _auto_width(ws)
-
-    buf = io.BytesIO()
-    wb.save(buf)
-    return buf.getvalue()
 
 
 def generate_records_xlsx(

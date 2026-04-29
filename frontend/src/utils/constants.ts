@@ -14,15 +14,16 @@ export const ROUTES = {
   ETV_NOTIFICATIONS: '/etv/notifications',
   ETV_ERROR_REPORTS: '/etv/error-reports',
   ETV_EXPLORER: '/etv/explorer',
+  ETV_CLOSINGS: '/etv/saldos-finales',
 
   // Internal
   DASHBOARD: '/internal/dashboard',
   ARQUEO_EXPLORER: '/internal/arqueos',
   VAULT_DIRECTORY: '/internal/vaults',
   PERSONNEL_DIRECTORY: '/internal/personnel',
-  REPORTS: '/internal/reports',
   ERROR_REPORTS: '/internal/error-reports',
   NOTIFICATIONS: '/internal/notifications',
+  CLOSINGS: '/internal/saldos-finales',
 
   // Admin
   USER_MANAGEMENT: '/admin/users',

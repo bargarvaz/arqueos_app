@@ -2,6 +2,60 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Tokens semánticos (light por defecto) ─────────────────────────────── */
+:root {
+  --color-background: 255 255 255;          /* #FFFFFF */
+  --color-surface: 247 247 248;             /* #F7F7F8 */
+  --color-surface-alt: 250 250 251;         /* #FAFAFB */
+  --color-surface-hover: 239 239 241;       /* #EFEFF1 */
+  --color-border: 234 234 236;              /* #EAEAEC */
+  --color-border-strong: 215 215 219;       /* #D7D7DB */
+
+  --color-text-primary: 31 31 35;           /* #1F1F23 */
+  --color-text-secondary: 82 82 91;         /* #52525B */
+  --color-text-muted: 154 154 163;          /* #9A9AA3 */
+
+  --color-status-error-light: 255 235 238;     /* #FFEBEE */
+  --color-status-success-light: 232 245 233;   /* #E8F5E9 */
+  --color-status-warning-light: 255 243 224;   /* #FFF3E0 */
+  --color-status-info-light: 227 242 253;      /* #E3F2FD */
+
+  --shadow-strength: 0.04;
+  --scrollbar-thumb: #D7D7DB;
+  --scrollbar-thumb-hover: #B5B5BD;
+  --selection-bg: rgba(74, 93, 35, 0.18);
+  --selection-fg: #1F1F23;
+}
+
+/* ─── Modo oscuro ───────────────────────────────────────────────────────── */
+.dark {
+  --color-background: 24 26 31;             /* #181A1F  cards/sheets/inputs */
+  --color-surface: 32 35 42;                /* #20232A  filas/zebra/headers */
+  --color-surface-alt: 16 18 22;            /* #101216  fondo de la app */
+  --color-surface-hover: 41 45 53;          /* #292D35 */
+  --color-border: 41 45 54;                 /* #292D36 */
+  --color-border-strong: 60 64 75;          /* #3C404B */
+
+  --color-text-primary: 232 232 237;        /* #E8E8ED */
+  --color-text-secondary: 170 170 180;      /* #AAAAB4 */
+  --color-text-muted: 113 114 124;          /* #71727C */
+
+  /* Pastel "light" no funciona en dark; se reemplaza por un velo translúcido
+     del color fuerte sobre la superficie oscura. */
+  --color-status-error-light: 64 24 28;        /* #40181C — equivale a rojo+18% */
+  --color-status-success-light: 22 50 28;      /* #16321C */
+  --color-status-warning-light: 64 38 14;      /* #40260E */
+  --color-status-info-light: 18 36 60;         /* #12243C */
+
+  --shadow-strength: 0.45;
+  --scrollbar-thumb: #3C404B;
+  --scrollbar-thumb-hover: #565B68;
+  --selection-bg: rgba(94, 117, 48, 0.30);
+  --selection-fg: #F0F0F4;
+
+  color-scheme: dark;
+}
+
 @layer base {
   *, *::before, *::after {
     box-sizing: border-box;
@@ -13,85 +67,149 @@
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    color: #1A1A1A;
-    background-color: #F5F5F5;
+    color: rgb(var(--color-text-primary));
+    background-color: rgb(var(--color-surface-alt));
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    transition: background-color 200ms ease, color 200ms ease;
   }
 
   body {
     min-height: 100vh;
-    line-height: 1.5;
+    line-height: 1.55;
+    letter-spacing: -0.005em;
   }
 
-  /* Scrollbar minimalista */
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+  h1 {
+    @apply tracking-tight;
+    letter-spacing: -0.018em;
   }
-  ::-webkit-scrollbar-track {
-    background: #F5F5F5;
+
+  h2, h3, h4 {
+    @apply tracking-tight;
+    letter-spacing: -0.012em;
   }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb {
-    background: #C0C0C0;
-    border-radius: 3px;
+    background: var(--scrollbar-thumb);
+    border-radius: 4px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #9E9E9E;
+    background: var(--scrollbar-thumb-hover);
+    background-clip: padding-box;
+    border: 2px solid transparent;
   }
+
+  /* Selección */
+  ::selection {
+    background-color: var(--selection-bg);
+    color: var(--selection-fg);
+  }
+
+  /* Color-scheme nativo (afecta inputs <select>, scrollbar de Firefox, etc.) */
+  html { color-scheme: light; }
 }
 
+/* ─── Shim de modo oscuro para clases utilitarias literales ──────────────
+   Muchas pantallas usan `bg-white` directamente (cards, modales, headers).
+   En dark mode las mapeamos a la superficie semántica para no tener que
+   refactorizar cada componente. */
+.dark .bg-white {
+  background-color: rgb(var(--color-background));
+}
+.dark .bg-white\/80 {
+  background-color: rgb(var(--color-background) / 0.80);
+}
+.dark .bg-white\/60 {
+  background-color: rgb(var(--color-background) / 0.60);
+}
+.dark .bg-white\/50 {
+  background-color: rgb(var(--color-background) / 0.50);
+}
+
+/* Tablas con zebra explícita y badges con tinte translúcido */
+.dark .badge-success { color: #7BD389; }
+.dark .badge-error { color: #FF8A8A; }
+.dark .badge-warning { color: #FFB659; }
+.dark .badge-info { color: #6FB7FF; }
+
 @layer components {
-  /* Botones base */
+  /* ─── Botones ──────────────────────────────────────────────────────────── */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded font-medium text-sm
-           transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
-           focus:outline-none focus:ring-2 focus:ring-offset-1;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-sm
+           transition-all duration-150 cursor-pointer select-none
+           disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none
+           focus:outline-none focus-visible:ring-4 focus-visible:ring-offset-0;
   }
 
   .btn-primary {
-    @apply btn bg-primary text-white hover:bg-primary-dark focus:ring-primary;
+    @apply btn bg-primary text-white shadow-soft
+           hover:bg-primary-dark hover:shadow-card
+           active:translate-y-px
+           focus-visible:ring-primary/25;
   }
 
   .btn-secondary {
-    @apply btn bg-secondary text-white hover:bg-secondary-dark focus:ring-secondary;
+    @apply btn bg-secondary text-white shadow-soft
+           hover:bg-secondary-dark hover:shadow-card
+           active:translate-y-px
+           focus-visible:ring-secondary/25;
   }
 
   .btn-outline {
-    @apply btn border border-primary text-primary hover:bg-primary hover:text-white focus:ring-primary;
+    @apply btn border border-border-strong bg-background text-text-primary
+           hover:bg-surface hover:border-text-muted
+           focus-visible:ring-primary/20;
   }
 
   .btn-ghost {
-    @apply btn text-text-secondary hover:bg-surface focus:ring-border;
+    @apply btn text-text-secondary
+           hover:bg-surface hover:text-text-primary
+           focus-visible:ring-primary/15;
   }
 
   .btn-danger {
-    @apply btn bg-status-error text-white hover:opacity-90 focus:ring-status-error;
+    @apply btn bg-status-error text-white shadow-soft
+           hover:opacity-95 hover:shadow-card
+           active:translate-y-px
+           focus-visible:ring-status-error/25;
   }
 
-  /* Inputs */
+  /* ─── Inputs ───────────────────────────────────────────────────────────── */
   .input {
-    @apply w-full px-3 py-2 border border-border rounded text-sm text-text-primary bg-white
+    @apply w-full px-3.5 py-2 border border-border rounded-lg text-sm text-text-primary bg-background
            placeholder:text-text-muted
-           focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent
-           disabled:bg-surface disabled:cursor-not-allowed;
+           transition-all duration-150
+           hover:border-border-strong
+           focus:outline-none focus:ring-4 focus:ring-primary/15 focus:border-primary
+           disabled:bg-surface disabled:cursor-not-allowed disabled:text-text-muted;
   }
 
   .input-error {
-    @apply input border-status-error focus:ring-status-error;
+    @apply input border-status-error focus:ring-status-error/15 focus:border-status-error;
   }
 
-  /* Labels */
+  /* ─── Labels ───────────────────────────────────────────────────────────── */
   .label {
-    @apply block text-sm font-medium text-text-primary mb-1;
+    @apply block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wide;
   }
 
-  /* Cards */
+  /* ─── Cards ────────────────────────────────────────────────────────────── */
   .card {
-    @apply bg-white border border-border rounded-lg p-6 shadow-sm;
+    @apply bg-background border border-border rounded-xl p-6 shadow-soft;
   }
 
-  /* Badges de estado */
+  .card-hover {
+    @apply card transition-all duration-200 hover:shadow-card hover:-translate-y-0.5;
+  }
+
+  /* ─── Badges ───────────────────────────────────────────────────────────── */
   .badge {
-    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold;
   }
 
   .badge-success {
@@ -108,5 +226,31 @@
 
   .badge-info {
     @apply badge bg-status-info-light text-status-info;
+  }
+
+  .badge-neutral {
+    @apply badge bg-surface text-text-secondary border border-border;
+  }
+
+  /* ─── Tabs / pills ─────────────────────────────────────────────────────── */
+  .tab {
+    @apply px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+           text-text-secondary hover:text-text-primary hover:bg-surface;
+  }
+
+  .tab-active {
+    @apply tab bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary;
+  }
+
+  .section-title {
+    @apply text-xs font-semibold uppercase tracking-wider text-text-muted;
+  }
+
+  .heading-lg {
+    @apply text-2xl font-semibold text-text-primary tracking-tight;
+  }
+
+  .heading-md {
+    @apply text-lg font-semibold text-text-primary tracking-tight;
   }
 }

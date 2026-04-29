@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, case
+from sqlalchemy import select, func, and_, or_, case
 
 from app.arqueos.models import ArqueoHeader, ArqueoRecord, ArqueoStatus
 from app.vaults.models import Vault
@@ -60,7 +60,7 @@ async def get_summary(
         vaults_q = vaults_q.where(Vault.id == vault_id)
     total_vaults = (await db.execute(vaults_q)).scalar_one()
 
-    # Headers en el rango
+    # Headers en el rango (excluyendo arqueos antes del reset)
     headers_q = (
         select(ArqueoHeader)
         .join(Vault, Vault.id == ArqueoHeader.vault_id)
@@ -69,6 +69,10 @@ async def get_summary(
             ArqueoHeader.arqueo_date <= dt,
             ArqueoHeader.status != ArqueoStatus.draft,
             Vault.is_active == True,
+            or_(
+                Vault.balance_reset_at.is_(None),
+                ArqueoHeader.arqueo_date >= Vault.balance_reset_at,
+            ),
         )
     )
     if company_id:
@@ -99,6 +103,10 @@ async def get_summary(
             ArqueoRecord.is_active == True,
             ArqueoRecord.is_counterpart == False,
             Vault.is_active == True,
+            or_(
+                Vault.balance_reset_at.is_(None),
+                ArqueoHeader.arqueo_date >= Vault.balance_reset_at,
+            ),
         )
     )
     withdrawals_q = entries_q.with_only_columns(
@@ -154,10 +162,15 @@ async def get_missing_vaults(
     # IDs de bóvedas que tienen al menos un arqueo publicado en el rango
     submitted_q = (
         select(ArqueoHeader.vault_id)
+        .join(Vault, Vault.id == ArqueoHeader.vault_id)
         .where(
             ArqueoHeader.arqueo_date >= df,
             ArqueoHeader.arqueo_date <= dt,
             ArqueoHeader.status != ArqueoStatus.draft,
+            or_(
+                Vault.balance_reset_at.is_(None),
+                ArqueoHeader.arqueo_date >= Vault.balance_reset_at,
+            ),
         )
     )
     submitted_result = await db.execute(submitted_q)

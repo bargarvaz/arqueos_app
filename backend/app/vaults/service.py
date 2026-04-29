@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Servicio de bóvedas, sucursales y personal."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -196,10 +196,19 @@ async def update_vault_denominations(
     ip_address: str | None = None,
     user_agent: str | None = None,
 ) -> Vault:
-    """Actualiza las denominaciones iniciales y el initial_balance derivado."""
+    """
+    Reescribe las denominaciones iniciales y el `initial_balance` derivado.
+
+    Esta operación se trata como un **reset de saldo**: marca
+    `balance_reset_at = hoy`, de modo que cualquier cálculo posterior
+    (apertura de arqueos, inventario por denominación, saldos finales)
+    ignore los arqueos publicados antes de esta fecha. Después dispara una
+    notificación a operaciones, admin y los ETV asignados a la bóveda.
+    """
     vault = await get_vault(db, vault_id)
     old = {f: getattr(vault, f) for f in _DENOMINATION_FIELDS}
     old["initial_balance"] = vault.initial_balance
+    old["balance_reset_at"] = vault.balance_reset_at
 
     for f in _DENOMINATION_FIELDS:
         if f in denominations:
@@ -207,24 +216,44 @@ async def update_vault_denominations(
     vault.initial_balance = sum(
         (getattr(vault, f) for f in _DENOMINATION_FIELDS), start=Decimal("0")
     )
+    vault.balance_reset_at = date.today()
 
     await log_action(
         db,
         user_id=admin_user_id,
-        action="update",
+        action="vault_balance_reset",
         entity_type="vault",
         entity_id=vault_id,
         old_values={k: str(v) for k, v in old.items()},
         new_values={
             **{f: str(getattr(vault, f)) for f in _DENOMINATION_FIELDS},
             "initial_balance": str(vault.initial_balance),
+            "balance_reset_at": str(vault.balance_reset_at),
         },
         ip_address=ip_address,
         user_agent=user_agent,
     )
     await db.commit()
     await db.refresh(vault)
+
+    # Notificar fuera de la transacción principal (no bloquea respuesta)
+    asyncio.create_task(_notify_balance_reset_task(vault.id, admin_user_id))
+
     return vault
+
+
+async def _notify_balance_reset_task(vault_id: int, by_user_id: int) -> None:
+    """Envía notificación de reset de saldo en una sesión separada."""
+    try:
+        from app.database import AsyncSessionLocal
+        from app.notifications.service import notify_vault_balance_reset
+        async with AsyncSessionLocal() as db:
+            await notify_vault_balance_reset(db, vault_id=vault_id, by_user_id=by_user_id)
+            await db.commit()
+    except Exception:
+        # Logging mínimo; las notificaciones no deben tumbar la operación.
+        import logging
+        logging.getLogger(__name__).exception("Fallo notificando reset de saldo")
 
 
 async def get_vault(db: AsyncSession, vault_id: int) -> Vault:
@@ -389,6 +418,9 @@ async def reactivate_vault(
 
     vault.is_active = True
     vault.reactivated_at = datetime.now(timezone.utc)
+    # La reactivación equivale a un reset: a partir de hoy los cálculos
+    # parten del nuevo saldo inicial, ignorando la historia previa.
+    vault.balance_reset_at = date.today()
 
     await log_action(
         db,

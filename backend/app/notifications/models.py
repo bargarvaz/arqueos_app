@@ -28,6 +28,7 @@ class NotificationType(str, enum.Enum):
     negative_balance = "negative_balance"
     excess_certificates = "excess_certificates"
     vault_reactivated = "vault_reactivated"
+    vault_balance_reset = "vault_balance_reset"
     password_reset = "password_reset"
     error_reported = "error_reported"
     error_response = "error_response"

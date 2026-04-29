@@ -1,57 +1,66 @@
 /** @type {import('tailwindcss').Config} */
+const withVar = (token) => `rgb(var(${token}) / <alpha-value>)`;
+
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        // Paleta del sistema de arqueos
+        // ─── Marca (fijos en ambos modos) ──────────────────────────────────
         primary: {
-          DEFAULT: '#4A5D23',   // Verde militar
+          DEFAULT: '#4A5D23',
           light: '#5E7530',
           dark: '#384718',
           foreground: '#FFFFFF',
         },
         secondary: {
-          DEFAULT: '#B8860B',   // Dorado
+          DEFAULT: '#B8860B',
           light: '#D4A017',
           dark: '#9A7009',
           foreground: '#FFFFFF',
         },
-        background: '#FFFFFF',
-        surface: '#F5F5F5',
-        border: '#E0E0E0',
+
+        // ─── Tokens semánticos (vía CSS vars, light/dark) ──────────────────
+        background: withVar('--color-background'),
+        surface: withVar('--color-surface'),
+        'surface-alt': withVar('--color-surface-alt'),
+        'surface-hover': withVar('--color-surface-hover'),
+        border: withVar('--color-border'),
+        'border-strong': withVar('--color-border-strong'),
         text: {
-          primary: '#1A1A1A',
-          secondary: '#5A5A5A',
-          muted: '#9E9E9E',
+          primary: withVar('--color-text-primary'),
+          secondary: withVar('--color-text-secondary'),
+          muted: withVar('--color-text-muted'),
         },
+
+        // ─── Estado (mantengo paleta original; las "*-light" se refuerzan
+        //     con un shim en globals.css para dark mode). ────────────────────
         status: {
           error: '#D32F2F',
-          'error-light': '#FFEBEE',
+          'error-light': withVar('--color-status-error-light'),
           success: '#388E3C',
-          'success-light': '#E8F5E9',
+          'success-light': withVar('--color-status-success-light'),
           warning: '#F57C00',
-          'warning-light': '#FFF3E0',
+          'warning-light': withVar('--color-status-warning-light'),
           info: '#1976D2',
-          'info-light': '#E3F2FD',
+          'info-light': withVar('--color-status-info-light'),
         },
-        // Aliases sin prefijo `status-` para que `text-error`, `bg-error/10`, etc.
-        // funcionen consistentemente en todo el código.
         error: {
           DEFAULT: '#D32F2F',
-          light: '#FFEBEE',
+          light: withVar('--color-status-error-light'),
         },
         success: {
           DEFAULT: '#388E3C',
-          light: '#E8F5E9',
+          light: withVar('--color-status-success-light'),
         },
         warning: {
           DEFAULT: '#F57C00',
-          light: '#FFF3E0',
+          light: withVar('--color-status-warning-light'),
         },
         info: {
           DEFAULT: '#1976D2',
-          light: '#E3F2FD',
+          light: withVar('--color-status-info-light'),
         },
       },
       fontFamily: {
@@ -59,7 +68,25 @@ export default {
         mono: ['JetBrains Mono', 'Consolas', 'monospace'],
       },
       borderRadius: {
-        DEFAULT: '6px',
+        DEFAULT: '8px',
+        lg: '12px',
+        xl: '16px',
+      },
+      boxShadow: {
+        soft: '0 1px 2px rgba(20, 20, 30, 0.04), 0 1px 3px rgba(20, 20, 30, 0.04)',
+        card: '0 1px 3px rgba(20, 20, 30, 0.05), 0 4px 12px -4px rgba(20, 20, 30, 0.04)',
+        elevated: '0 4px 24px -8px rgba(20, 20, 30, 0.10), 0 2px 6px -2px rgba(20, 20, 30, 0.06)',
+        ring: '0 0 0 4px rgba(74, 93, 35, 0.12)',
+        'ring-secondary': '0 0 0 4px rgba(184, 134, 11, 0.14)',
+      },
+      keyframes: {
+        'fade-in': {
+          '0%': { opacity: '0', transform: 'translateY(2px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+      },
+      animation: {
+        'fade-in': 'fade-in 180ms ease-out',
       },
     },
   },

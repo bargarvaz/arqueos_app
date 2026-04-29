@@ -13,6 +13,7 @@ from app.arqueos.schemas import (
     ArqueoHeaderCreate,
     ArqueoHeaderResponse,
     ArqueoHeaderWithRecordsResponse,
+    MonthlyClosingsResponse,
     PublishArqueoRequest,
 )
 from app.arqueos import service
@@ -34,6 +35,31 @@ async def get_my_vaults(
 ):
     """Retorna las bóvedas activas asignadas al ETV con el estado del arqueo de hoy."""
     return await service.get_etv_vaults(db, user_id=current_user.id)
+
+
+# ─── Saldos finales (cierres por mes) ─────────────────────────────────────────
+
+@router.get(
+    "/closings/{vault_id}",
+    response_model=MonthlyClosingsResponse,
+    summary="Saldos finales mensuales por bóveda (cierre por día y denominación)",
+)
+async def get_monthly_closings(
+    vault_id: int,
+    year: int = Query(..., ge=2000, le=2100),
+    month: int = Query(..., ge=1, le=12),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Cualquier rol autenticado puede consultar. ETV únicamente sus bóvedas
+    asignadas (verificación explícita).
+    """
+    if current_user.role == "etv":
+        from app.arqueos.service import _verify_vault_assignment
+        await _verify_vault_assignment(db, current_user.id, vault_id)
+
+    return await service.get_monthly_closings(db, vault_id, year, month)
 
 
 # ─── Header ───────────────────────────────────────────────────────────────────

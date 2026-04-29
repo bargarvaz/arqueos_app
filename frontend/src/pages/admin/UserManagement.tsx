@@ -1,7 +1,7 @@
 // Gestión de usuarios — solo Admin
 import { useState, useEffect, useCallback } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { UserPlus, KeyRound, Vault } from 'lucide-react';
+import { UserPlus, KeyRound, Vault, Edit2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -35,6 +35,26 @@ const createSchema = z
   );
 
 type CreateForm = z.infer<typeof createSchema>;
+
+const editSchema = z
+  .object({
+    full_name: z.string().min(2, 'Nombre requerido.'),
+    puesto: z.string().optional().nullable(),
+    role: z.enum(['admin', 'operations', 'data_science', 'etv']),
+    etv_subrole: z.enum(['gerente', 'tesorero']).optional().nullable(),
+    company_id: z.number().nullable().optional(),
+    empresa_id: z.number().nullable().optional(),
+  })
+  .refine(
+    (d) => d.role !== 'etv' || !!d.etv_subrole,
+    { message: 'Selecciona Gerente o Tesorero.', path: ['etv_subrole'] },
+  )
+  .refine(
+    (d) => d.role !== 'etv' || !!d.company_id,
+    { message: 'ETV requerida.', path: ['company_id'] },
+  );
+
+type EditForm = z.infer<typeof editSchema>;
 
 const ROLE_OPTIONS = [
   { value: 'admin', label: 'Administrador' },
@@ -70,6 +90,11 @@ export default function UserManagement() {
   const [vaultSaving, setVaultSaving] = useState(false);
   const [vaultError, setVaultError] = useState('');
 
+  // Editar usuario (datos)
+  const [editTarget, setEditTarget] = useState<UserResponse | null>(null);
+  const [editError, setEditError] = useState('');
+  const [editEmpresas, setEditEmpresas] = useState<Empresa[]>([]);
+
   const [companies, setCompanies] = useState<Company[]>([]);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [allVaults, setAllVaults] = useState<VaultType[]>([]);
@@ -82,6 +107,10 @@ export default function UserManagement() {
     reset,
     formState: { errors, isSubmitting },
   } = useForm<CreateForm>({ resolver: zodResolver(createSchema) });
+
+  const editForm = useForm<EditForm>({ resolver: zodResolver(editSchema) });
+  const editRole = editForm.watch('role');
+  const editCompanyId = editForm.watch('company_id');
 
   const watchRole = watch('role');
   const watchCompanyId = watch('company_id');
@@ -130,6 +159,28 @@ export default function UserManagement() {
     }
   }, [watchRole, watchCompanyId]);
 
+  // Empresas filtradas por la ETV elegida en el form de edición
+  useEffect(() => {
+    if (editRole === 'etv' && editCompanyId) {
+      userService
+        .listEmpresas({ etv_id: editCompanyId })
+        .then(setEditEmpresas)
+        .catch(() => setEditEmpresas([]));
+    } else {
+      setEditEmpresas([]);
+    }
+  }, [editRole, editCompanyId]);
+
+  // Si cambia la ETV en edición, limpiar empresa si ya no pertenece
+  useEffect(() => {
+    if (!editTarget || editRole !== 'etv') return;
+    const current = editForm.getValues('empresa_id');
+    if (current == null) return;
+    const stillValid = editEmpresas.find((e) => e.id === current);
+    if (!stillValid) editForm.setValue('empresa_id', null, { shouldValidate: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editEmpresas]);
+
   // ─── Acciones de tabla ───────────────────────────────────────────────────────
 
   const handleToggleActive = async (user: UserResponse) => {
@@ -150,6 +201,38 @@ export default function UserManagement() {
       alert(`Contraseña temporal: ${result.temp_password}\n\nComunícala al usuario por un canal seguro.`);
     } catch (err) {
       alert(getErrorMessage(err));
+    }
+  };
+
+  const openEdit = (u: UserResponse) => {
+    setEditTarget(u);
+    setEditError('');
+    editForm.reset({
+      full_name: u.full_name,
+      puesto: u.puesto ?? '',
+      role: u.role as EditForm['role'],
+      etv_subrole: u.etv_subrole ?? null,
+      company_id: u.company_id ?? null,
+      empresa_id: u.empresa_id ?? null,
+    });
+  };
+
+  const onEditSubmit = async (data: EditForm) => {
+    if (!editTarget) return;
+    setEditError('');
+    try {
+      const isEtv = data.role === 'etv';
+      await userService.updateUser(editTarget.id, {
+        full_name: data.full_name,
+        puesto: data.puesto?.toString().trim() || null,
+        etv_subrole: isEtv ? data.etv_subrole ?? null : null,
+        company_id: isEtv ? data.company_id ?? null : null,
+        empresa_id: isEtv ? data.empresa_id ?? null : null,
+      });
+      setEditTarget(null);
+      await load();
+    } catch (err) {
+      setEditError(getErrorMessage(err));
     }
   };
 
@@ -272,6 +355,14 @@ export default function UserManagement() {
         const u = row.original;
         return (
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => openEdit(u)}
+              className="flex items-center gap-1 text-xs text-primary hover:bg-primary/10 px-2 py-1 rounded"
+              title="Editar usuario"
+            >
+              <Edit2 className="w-3.5 h-3.5" />
+              Editar
+            </button>
             {u.role === 'etv' && (
               <button
                 onClick={() => openVaultModal(u)}
@@ -526,6 +617,155 @@ export default function UserManagement() {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── Modal: Editar usuario ──────────────────────────────────────────── */}
+      {editTarget && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-lg shadow-xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-border flex-shrink-0">
+              <div>
+                <h2 className="text-base font-semibold text-text-primary">Editar Usuario</h2>
+                <p className="text-xs text-text-muted mt-0.5">{editTarget.email}</p>
+              </div>
+              <button
+                onClick={() => setEditTarget(null)}
+                className="text-text-muted hover:text-text-primary text-lg leading-none"
+              >
+                ×
+              </button>
+            </div>
+            <form
+              onSubmit={editForm.handleSubmit(onEditSubmit)}
+              className="p-5 space-y-4 overflow-y-auto flex-1"
+            >
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className="label">Nombre completo</label>
+                  <input
+                    type="text"
+                    className={editForm.formState.errors.full_name ? 'input-error' : 'input'}
+                    {...editForm.register('full_name')}
+                  />
+                  {editForm.formState.errors.full_name && (
+                    <p className="text-status-error text-xs mt-1">
+                      {editForm.formState.errors.full_name.message}
+                    </p>
+                  )}
+                </div>
+                <div className="col-span-2">
+                  <label className="label">Puesto</label>
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="Ej. Gerente de Operaciones"
+                    {...editForm.register('puesto')}
+                  />
+                </div>
+                <div>
+                  <label className="label">Rol</label>
+                  <input
+                    type="text"
+                    readOnly
+                    className="input bg-surface text-text-muted cursor-default"
+                    value={ROLE_OPTIONS.find((r) => r.value === editRole)?.label ?? ''}
+                  />
+                  <input type="hidden" {...editForm.register('role')} />
+                  <p className="text-text-muted text-xs mt-1">
+                    El rol no se puede modificar.
+                  </p>
+                </div>
+                {editRole === 'etv' && (
+                  <div>
+                    <label className="label">
+                      Sub-rol ETV <span className="text-status-error">*</span>
+                    </label>
+                    <select
+                      className={editForm.formState.errors.etv_subrole ? 'input-error' : 'input'}
+                      {...editForm.register('etv_subrole', {
+                        setValueAs: (v) => (v === '' || v == null ? null : v),
+                      })}
+                    >
+                      <option value="">Seleccionar...</option>
+                      <option value="gerente">Gerente</option>
+                      <option value="tesorero">Tesorero</option>
+                    </select>
+                    {editForm.formState.errors.etv_subrole && (
+                      <p className="text-status-error text-xs mt-1">
+                        {editForm.formState.errors.etv_subrole.message}
+                      </p>
+                    )}
+                  </div>
+                )}
+                {editRole === 'etv' && (
+                  <>
+                    <div className="col-span-2">
+                      <label className="label">
+                        ETV (transportadora) <span className="text-status-error">*</span>
+                      </label>
+                      <select
+                        className={editForm.formState.errors.company_id ? 'input-error' : 'input'}
+                        {...editForm.register('company_id', {
+                          setValueAs: (v) =>
+                            v === '' || v == null ? null : Number(v),
+                        })}
+                      >
+                        <option value="">Seleccionar ETV...</option>
+                        {companies.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                      {editForm.formState.errors.company_id && (
+                        <p className="text-status-error text-xs mt-1">
+                          {editForm.formState.errors.company_id.message}
+                        </p>
+                      )}
+                    </div>
+                    <div className="col-span-2">
+                      <label className="label">Empresa (opcional)</label>
+                      <select
+                        className="input"
+                        {...editForm.register('empresa_id', {
+                          setValueAs: (v) =>
+                            v === '' || v == null ? null : Number(v),
+                        })}
+                        disabled={!editCompanyId || editEmpresas.length === 0}
+                      >
+                        <option value="">Sin empresa específica</option>
+                        {editEmpresas.map((e) => (
+                          <option key={e.id} value={e.id}>
+                            {e.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {editError && <p className="text-status-error text-sm">{editError}</p>}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditTarget(null)}
+                  className="btn-secondary flex-1"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={editForm.formState.isSubmitting}
+                  className="btn-primary flex-1"
+                >
+                  {editForm.formState.isSubmitting ? 'Guardando...' : 'Guardar cambios'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
