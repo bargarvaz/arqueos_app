@@ -1,7 +1,7 @@
 // Explorador de arqueos — drill-down: Bóvedas → Vista mensual
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronRight, ChevronLeft, AlertTriangle } from 'lucide-react';
+import { ChevronRight, ChevronLeft, AlertTriangle, Eye, EyeOff, Search } from 'lucide-react';
 import vaultService, { Vault } from '@/services/vaultService';
 import explorerService, { ExplorerRecord, ExplorerFilters, VaultDayBalance } from '@/services/explorerService';
 import { DENOMINATIONS } from '@/utils/constants';
@@ -35,35 +35,105 @@ function monthLabel(year: number, month: number): string {
 
 function VaultList({ onSelect }: { onSelect: (v: Vault) => void }) {
   const [balances, setBalances] = useState<VaultDayBalance[]>([]);
+  const [inactiveVaults, setInactiveVaults] = useState<Vault[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [showInactive, setShowInactive] = useState(false);
 
+  // Carga simultánea: balances de hoy (activas) y universo completo para
+  // separar las inactivas. Una sola petición de cada cosa al montar.
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0];
-    explorerService.getVaultBalances(today)
-      .then(setBalances)
-      .catch(() => setBalances([]))
-      .finally(() => setLoading(false));
+    let alive = true;
+    (async () => {
+      try {
+        const [bal, vaultsRes] = await Promise.all([
+          explorerService.getVaultBalances(today),
+          vaultService.listVaults({
+            page: 1,
+            page_size: 0,
+            include_inactive: true,
+          }),
+        ]);
+        if (!alive) return;
+        setBalances(bal);
+        setInactiveVaults(vaultsRes.items.filter((v) => !v.is_active));
+      } catch {
+        if (!alive) return;
+        setBalances([]);
+        setInactiveVaults([]);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
   }, []);
 
-  const filtered = balances.filter(
-    (b) =>
-      !search ||
-      b.vault_code.toLowerCase().includes(search.toLowerCase()) ||
-      b.vault_name.toLowerCase().includes(search.toLowerCase())
+  const matchesSearch = (code: string, name: string) =>
+    !search ||
+    code.toLowerCase().includes(search.toLowerCase()) ||
+    name.toLowerCase().includes(search.toLowerCase());
+
+  const filteredActive = useMemo(
+    () => balances.filter((b) => matchesSearch(b.vault_code, b.vault_name)),
+    [balances, search],
+  );
+  const filteredInactive = useMemo(
+    () => inactiveVaults.filter((v) => matchesSearch(v.vault_code, v.vault_name)),
+    [inactiveVaults, search],
   );
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-text-primary">Explorador de Arqueos</h1>
-        <input
-          type="text"
-          className="input w-64 text-sm"
-          placeholder="Buscar bóveda..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+        <h1 className="text-xl font-semibold text-text-primary">
+          Explorador de Arqueos
+        </h1>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none" />
+            <input
+              type="text"
+              className="input pl-9 w-64 text-sm"
+              placeholder={
+                showInactive
+                  ? 'Buscar bóveda inactiva…'
+                  : 'Buscar bóveda activa…'
+              }
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowInactive((v) => !v)}
+            className="btn-outline text-sm flex items-center gap-2"
+            title={
+              showInactive
+                ? 'Volver al listado de bóvedas activas'
+                : 'Ver bóvedas inactivas'
+            }
+          >
+            {showInactive ? (
+              <>
+                <Eye className="w-4 h-4" />
+                Ver activas
+              </>
+            ) : (
+              <>
+                <EyeOff className="w-4 h-4" />
+                Ver inactivas
+                {inactiveVaults.length > 0 && (
+                  <span className="ml-1 text-[11px] bg-surface px-1.5 py-0.5 rounded-md text-text-muted">
+                    {inactiveVaults.length}
+                  </span>
+                )}
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       <div className="card overflow-hidden p-0">
@@ -71,47 +141,118 @@ function VaultList({ onSelect }: { onSelect: (v: Vault) => void }) {
           <div className="flex items-center justify-center h-32">
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
           </div>
-        ) : filtered.length === 0 ? (
-          <p className="text-center text-text-muted text-sm py-12">Sin bóvedas activas.</p>
-        ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-surface border-b border-border">
-              <tr className="text-left text-text-muted">
-                <th className="px-4 py-2">Código</th>
-                <th className="px-4 py-2">Nombre</th>
-                <th className="px-4 py-2 text-right">Saldo apertura hoy</th>
-                <th className="px-4 py-2 text-right">Saldo actual</th>
-                <th className="px-4 py-2 text-center">Estado hoy</th>
-                <th className="px-4 py-2 w-8" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {filtered.map((b) => (
-                <tr
-                  key={b.vault_id}
-                  className="hover:bg-surface/60 cursor-pointer"
-                  onClick={() => onSelect({ id: b.vault_id, vault_code: b.vault_code, vault_name: b.vault_name } as Vault)}
-                >
-                  <td className="px-4 py-2 font-mono font-semibold text-primary text-xs">{b.vault_code}</td>
-                  <td className="px-4 py-2">{b.vault_name}</td>
-                  <td className="px-4 py-2 font-mono text-right text-xs">${fmt(b.opening_balance)}</td>
-                  <td className="px-4 py-2 font-mono text-right text-xs font-semibold">${fmt(b.closing_balance)}</td>
-                  <td className="px-4 py-2 text-center">
-                    {b.status ? (
-                      <span className={`badge text-xs ${STATUS_BADGE[b.status] ?? 'badge-neutral'}`}>
-                        {STATUS_LABEL[b.status] ?? b.status}
-                      </span>
-                    ) : (
-                      <span className="text-text-muted text-xs">Sin arqueo</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-text-muted">
-                    <ChevronRight className="w-4 h-4" />
-                  </td>
+        ) : showInactive ? (
+          // ─── Tabla de inactivas ───────────────────────────────────────
+          filteredInactive.length === 0 ? (
+            <p className="text-center text-text-muted text-sm py-12">
+              {search
+                ? 'Sin coincidencias entre las bóvedas inactivas.'
+                : 'No hay bóvedas inactivas.'}
+            </p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-surface border-b border-border">
+                <tr className="text-left text-text-muted">
+                  <th className="px-4 py-2">Código</th>
+                  <th className="px-4 py-2">Nombre</th>
+                  <th className="px-4 py-2 text-right">Saldo inicial</th>
+                  <th className="px-4 py-2 text-center">Estado</th>
+                  <th className="px-4 py-2 w-8" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filteredInactive.map((v) => (
+                  <tr
+                    key={v.id}
+                    className="hover:bg-surface/60 cursor-pointer"
+                    onClick={() =>
+                      onSelect({
+                        id: v.id,
+                        vault_code: v.vault_code,
+                        vault_name: v.vault_name,
+                      } as Vault)
+                    }
+                  >
+                    <td className="px-4 py-2 font-mono font-semibold text-primary text-xs">
+                      {v.vault_code}
+                    </td>
+                    <td className="px-4 py-2">{v.vault_name}</td>
+                    <td className="px-4 py-2 font-mono text-right text-xs">
+                      ${fmt(v.initial_balance)}
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                      <span className="badge-neutral text-xs">Inactiva</span>
+                    </td>
+                    <td className="px-4 py-2 text-text-muted">
+                      <ChevronRight className="w-4 h-4" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )
+        ) : (
+          // ─── Tabla de activas (con balances de hoy) ─────────────────────
+          filteredActive.length === 0 ? (
+            <p className="text-center text-text-muted text-sm py-12">
+              {search ? 'Sin coincidencias.' : 'Sin bóvedas activas.'}
+            </p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-surface border-b border-border">
+                <tr className="text-left text-text-muted">
+                  <th className="px-4 py-2">Código</th>
+                  <th className="px-4 py-2">Nombre</th>
+                  <th className="px-4 py-2 text-right">Saldo apertura hoy</th>
+                  <th className="px-4 py-2 text-right">Saldo actual</th>
+                  <th className="px-4 py-2 text-center">Estado hoy</th>
+                  <th className="px-4 py-2 w-8" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filteredActive.map((b) => (
+                  <tr
+                    key={b.vault_id}
+                    className="hover:bg-surface/60 cursor-pointer"
+                    onClick={() =>
+                      onSelect({
+                        id: b.vault_id,
+                        vault_code: b.vault_code,
+                        vault_name: b.vault_name,
+                      } as Vault)
+                    }
+                  >
+                    <td className="px-4 py-2 font-mono font-semibold text-primary text-xs">
+                      {b.vault_code}
+                    </td>
+                    <td className="px-4 py-2">{b.vault_name}</td>
+                    <td className="px-4 py-2 font-mono text-right text-xs">
+                      ${fmt(b.opening_balance)}
+                    </td>
+                    <td className="px-4 py-2 font-mono text-right text-xs font-semibold">
+                      ${fmt(b.closing_balance)}
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                      {b.status ? (
+                        <span
+                          className={`badge text-xs ${
+                            STATUS_BADGE[b.status] ?? 'badge-neutral'
+                          }`}
+                        >
+                          {STATUS_LABEL[b.status] ?? b.status}
+                        </span>
+                      ) : (
+                        <span className="text-text-muted text-xs">Sin arqueo</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-text-muted">
+                      <ChevronRight className="w-4 h-4" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )
         )}
       </div>
     </div>
