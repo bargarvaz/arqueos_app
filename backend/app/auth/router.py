@@ -10,6 +10,7 @@ from app.auth.schemas import (
     OtpVerifyRequest,
     OtpResendRequest,
     RefreshRequest,
+    ForgotPasswordRequest,
     ChangePasswordRequest,
     MeResponse,
     TokenResponse,
@@ -162,6 +163,33 @@ async def resend_otp(
     """Reenvía el OTP con cooldown de 60s y máximo 3 reenvíos."""
     result = await auth_service.resend_otp(db, email=body.email, session_token=body.session_token)
     return result
+
+
+# ─── Recuperación de contraseña ───────────────────────────────────────────────
+
+@router.post("/forgot-password", status_code=status.HTTP_200_OK)
+@limiter.limit("3/minute")
+async def forgot_password(
+    request: Request,
+    body: ForgotPasswordRequest,
+    db: DbSession,
+):
+    """
+    Genera contraseña temporal y la envía por correo al usuario.
+    Siempre responde 200 con un mensaje neutro para no enumerar usuarios.
+    Rate limit: 3 solicitudes por minuto por IP.
+    """
+    ip = request.client.host if request.client else None
+    ua = request.headers.get("user-agent")
+    await auth_service.request_password_reset(
+        db, email=body.email, ip_address=ip, user_agent=ua,
+    )
+    return {
+        "message": (
+            "Si el correo está registrado, recibirás una contraseña "
+            "temporal en unos minutos."
+        )
+    }
 
 
 # ─── Refresh token ────────────────────────────────────────────────────────────

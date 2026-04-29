@@ -100,6 +100,16 @@ const authService = {
     });
   },
 
+  /** Solicita restablecer la contraseña enviando una temporal por correo.
+   * El backend siempre responde 200 con un mensaje neutro (no enumera). */
+  forgotPassword: async (email: string): Promise<{ message: string }> => {
+    const { data } = await api.post<{ message: string }>(
+      '/auth/forgot-password',
+      { email },
+    );
+    return data;
+  },
+
   /** Lista las sesiones activas del usuario actual. */
   listSessions: async (): Promise<AuthSession[]> => {
     const { data } = await api.get<AuthSession[]>('/auth/sessions');

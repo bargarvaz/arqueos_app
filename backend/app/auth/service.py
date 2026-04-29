@@ -35,6 +35,73 @@ from app.common.exceptions import (
 logger = logging.getLogger(__name__)
 
 
+# ─── Lockout por intentos fallidos ────────────────────────────────────────────
+
+MAX_FAILED_ATTEMPTS = 5  # al 5° intento la cuenta queda bloqueada
+LOCKOUT_DURATION = timedelta(minutes=15)
+
+
+async def _check_credentials(db: AsyncSession, email: str, password: str) -> User:
+    """Valida email + password aplicando lockout automático.
+
+    Reglas:
+      - Si la cuenta tiene `locked_until` vigente → 401 con mensaje y minutos restantes.
+      - Password OK → resetea `failed_login_attempts` y `locked_until`, devuelve user.
+      - Password incorrecta → incrementa contador.
+        - Al alcanzar `MAX_FAILED_ATTEMPTS` (5), bloquea por `LOCKOUT_DURATION` y
+          resetea el contador.
+        - En el penúltimo intento (4) el mensaje avisa "te queda 1 intento".
+      - Email inexistente → 401 genérico (no enumera usuarios).
+
+    Lanza siempre `UnauthorizedError` cuando hay falla.
+    """
+    user = await _get_active_user_by_email(db, email)
+    now = datetime.now(timezone.utc)
+
+    if user and user.locked_until and user.locked_until > now:
+        remaining_min = max(1, int((user.locked_until - now).total_seconds() // 60) + 1)
+        raise UnauthorizedError(
+            f"Cuenta bloqueada por múltiples intentos fallidos. "
+            f"Intenta nuevamente en {remaining_min} minuto"
+            f"{'s' if remaining_min != 1 else ''}."
+        )
+
+    if user and verify_password(password, user.password_hash):
+        # Login válido → limpia el estado de lockout si lo había.
+        if user.failed_login_attempts or user.locked_until:
+            user.failed_login_attempts = 0
+            user.locked_until = None
+        return user
+
+    # ── A partir de aquí: credenciales inválidas ───────────────────────────
+    if not user:
+        # No existe (o está inactivo) → mensaje genérico, no incrementamos nada.
+        raise UnauthorizedError("Credenciales incorrectas.")
+
+    user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
+    attempts = user.failed_login_attempts
+
+    if attempts >= MAX_FAILED_ATTEMPTS:
+        user.locked_until = now + LOCKOUT_DURATION
+        user.failed_login_attempts = 0
+        await db.commit()
+        raise UnauthorizedError(
+            "Credenciales incorrectas. La cuenta ha sido bloqueada por "
+            f"{int(LOCKOUT_DURATION.total_seconds() // 60)} minutos "
+            "por múltiples intentos fallidos."
+        )
+
+    if attempts == MAX_FAILED_ATTEMPTS - 1:
+        await db.commit()
+        raise UnauthorizedError(
+            "Credenciales incorrectas. Te queda 1 intento antes de que la "
+            "cuenta sea bloqueada."
+        )
+
+    await db.commit()
+    raise UnauthorizedError("Credenciales incorrectas.")
+
+
 # ─── Sesiones server-side ────────────────────────────────────────────────────
 
 async def _sweep_expired_sessions(db: AsyncSession) -> None:
@@ -149,10 +216,7 @@ async def login_internal(
     Login para usuarios internos (admin, operations, data_science).
     Retorna access_token + refresh_token directamente (sin MFA).
     """
-    user = await _get_active_user_by_email(db, email)
-
-    if not user or not verify_password(password, user.password_hash):
-        raise UnauthorizedError("Credenciales incorrectas.")
+    user = await _check_credentials(db, email, password)
 
     if user.user_type != UserType.internal:
         raise ForbiddenError("Este portal es exclusivo para usuarios internos.")
@@ -192,10 +256,7 @@ async def login_external_step1(
     Primer paso del login ETV: valida credenciales y envía OTP.
     Si settings.mfa_enabled=False, retorna tokens directamente (modo prueba).
     """
-    user = await _get_active_user_by_email(db, email)
-
-    if not user or not verify_password(password, user.password_hash):
-        raise UnauthorizedError("Credenciales incorrectas.")
+    user = await _check_credentials(db, email, password)
 
     if user.user_type != UserType.external:
         raise ForbiddenError("Este portal es exclusivo para usuarios ETV.")
@@ -401,6 +462,9 @@ async def change_password(
     old_hash = user.password_hash
     user.password_hash = hash_password(new_password)
     user.must_change_password = False
+    # Cambiar la contraseña limpia el estado de lockout, por si quedó residual.
+    user.failed_login_attempts = 0
+    user.locked_until = None
 
     await log_action(
         db,
@@ -422,6 +486,69 @@ async def _get_active_user_by_email(db: AsyncSession, email: str) -> User | None
         select(User).where(User.email == email, User.is_active == True)
     )
     return result.scalar_one_or_none()
+
+
+# ─── Recuperación de contraseña (auto-servicio) ──────────────────────────────
+
+async def request_password_reset(
+    db: AsyncSession,
+    email: str,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+) -> None:
+    """
+    Genera contraseña temporal y la envía por correo al usuario.
+
+    Por seguridad nunca revela si el email existe (no enumera usuarios). El
+    endpoint siempre responde 200; este servicio puede o no haber actuado.
+
+    Si actúa:
+      - Genera temp password fuerte y la hashea.
+      - Marca `must_change_password = True`.
+      - Limpia lockout (`failed_login_attempts = 0`, `locked_until = None`).
+      - Envía el correo en background (fallar el envío no debe bloquear el
+        endpoint, pero se loguea).
+      - Audita la acción como `password_reset_request`.
+    """
+    from app.auth.email_service import send_password_reset_notification
+    from app.common.background import fire_and_forget
+
+    user = await _get_active_user_by_email(db, email)
+    if user is None:
+        # No-op silencioso para no enumerar
+        return
+
+    temp_password = generate_temp_password()
+    user.password_hash = hash_password(temp_password)
+    user.must_change_password = True
+    user.failed_login_attempts = 0
+    user.locked_until = None
+
+    await log_action(
+        db,
+        user_id=user.id,
+        action="password_reset_request",
+        entity_type="user",
+        entity_id=user.id,
+        new_values={"must_change_password": True},
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+    await db.commit()
+
+    # Envío de correo fuera de la transacción
+    async def _send():
+        try:
+            await send_password_reset_notification(
+                recipient_email=user.email,
+                recipient_name=user.full_name,
+                temp_password=temp_password,
+            )
+        except Exception:
+            # El helper logueará la excepción
+            raise
+
+    fire_and_forget(_send(), name=f"forgot-password-{user.id}")
 
 
 # Importar settings aquí para evitar circular

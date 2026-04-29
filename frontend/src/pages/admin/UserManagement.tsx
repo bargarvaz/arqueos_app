@@ -1,7 +1,7 @@
 // Gestión de usuarios — solo Admin
 import { useState, useEffect, useCallback } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { UserPlus, KeyRound, Vault, Edit2 } from 'lucide-react';
+import { UserPlus, KeyRound, Vault, Edit2, Copy, Check } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -81,8 +81,37 @@ export default function UserManagement() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createError, setCreateError] = useState('');
   const [tempPassword, setTempPassword] = useState('');
+  const [tempPasswordCopied, setTempPasswordCopied] = useState(false);
+  const [tempPasswordReason, setTempPasswordReason] =
+    useState<'created' | 'reset'>('created');
   const [createVaults, setCreateVaults] = useState<number[]>([]);
   const [showBulkImport, setShowBulkImport] = useState(false);
+
+  // Auto-copia la contraseña temporal al portapapeles cuando se genera
+  useEffect(() => {
+    if (!tempPassword) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await navigator.clipboard.writeText(tempPassword);
+        if (!cancelled) setTempPasswordCopied(true);
+      } catch {
+        if (!cancelled) setTempPasswordCopied(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tempPassword]);
+
+  const copyTempPassword = async () => {
+    try {
+      await navigator.clipboard.writeText(tempPassword);
+      setTempPasswordCopied(true);
+    } catch {
+      setTempPasswordCopied(false);
+    }
+  };
 
   // Editar bóvedas
   const [vaultModalUser, setVaultModalUser] = useState<UserDetailResponse | null>(null);
@@ -198,7 +227,10 @@ export default function UserManagement() {
     if (!confirm(`¿Resetear contraseña de ${user.email}? Se generará una temporal.`)) return;
     try {
       const result = await userService.resetPassword(user.id);
-      alert(`Contraseña temporal: ${result.temp_password}\n\nComunícala al usuario por un canal seguro.`);
+      // Reusa el modal con auto-copia y feedback.
+      setTempPasswordReason('reset');
+      setTempPassword(result.temp_password);
+      setShowCreateModal(true);
     } catch (err) {
       alert(getErrorMessage(err));
     }
@@ -278,6 +310,7 @@ export default function UserManagement() {
         empresa_id: data.role === 'etv' ? data.empresa_id ?? null : null,
         vault_ids: data.role === 'etv' ? createVaults : [],
       });
+      setTempPasswordReason('created');
       setTempPassword(tp);
       reset();
       setCreateVaults([]);
@@ -291,6 +324,8 @@ export default function UserManagement() {
   const closeCreate = () => {
     setShowCreateModal(false);
     setTempPassword('');
+    setTempPasswordCopied(false);
+    setTempPasswordReason('created');
     setCreateError('');
     reset();
     setCreateVaults([]);
@@ -412,7 +447,11 @@ export default function UserManagement() {
             Carga masiva
           </button>
           <button
-            onClick={() => { setShowCreateModal(true); loadVaults(); }}
+            onClick={() => {
+              setTempPasswordReason('created');
+              setShowCreateModal(true);
+              loadVaults();
+            }}
             className="btn-primary flex items-center gap-2"
           >
             <UserPlus className="w-4 h-4" />
@@ -465,20 +504,59 @@ export default function UserManagement() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg w-full max-w-lg shadow-xl max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-border flex-shrink-0">
-              <h2 className="text-base font-semibold text-text-primary">Nuevo Usuario</h2>
+              <h2 className="text-base font-semibold text-text-primary">
+                {tempPassword
+                  ? tempPasswordReason === 'reset'
+                    ? 'Contraseña restablecida'
+                    : 'Usuario creado'
+                  : 'Nuevo Usuario'}
+              </h2>
               <button onClick={closeCreate} className="text-text-muted hover:text-text-primary text-lg leading-none">×</button>
             </div>
 
             {tempPassword ? (
               <div className="p-6">
-                <div className="bg-status-success-light border border-status-success rounded p-4 mb-4">
-                  <p className="text-sm font-semibold text-status-success mb-1">Usuario creado exitosamente</p>
-                  <p className="text-sm text-text-secondary">Contraseña temporal (copia y comunica por canal seguro):</p>
-                  <p className="font-mono text-base font-bold text-text-primary mt-2 bg-white border border-border rounded px-3 py-2 select-all">
-                    {tempPassword}
+                <div className="bg-status-success-light border border-status-success rounded-lg p-4 mb-4">
+                  <p className="text-sm font-semibold text-status-success mb-1">
+                    {tempPasswordReason === 'reset'
+                      ? 'Contraseña restablecida'
+                      : 'Usuario creado exitosamente'}
+                  </p>
+                  <p className="text-sm text-text-secondary">
+                    Contraseña temporal (comunícala por un canal seguro):
+                  </p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <p className="font-mono text-base font-bold text-text-primary bg-background border border-border rounded-lg px-3 py-2 select-all flex-1 break-all">
+                      {tempPassword}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={copyTempPassword}
+                      title="Copiar al portapapeles"
+                      className="btn-outline px-3 py-2 flex-shrink-0"
+                    >
+                      {tempPasswordCopied ? (
+                        <Check className="w-4 h-4 text-status-success" />
+                      ) : (
+                        <Copy className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                  <p className="text-xs text-status-success mt-2 flex items-center gap-1">
+                    {tempPasswordCopied ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        Copiada al portapapeles. Pégala con Ctrl+V donde la
+                        necesites.
+                      </>
+                    ) : (
+                      'No se pudo copiar automáticamente. Usa el botón.'
+                    )}
                   </p>
                 </div>
-                <button onClick={closeCreate} className="btn-primary w-full">Cerrar</button>
+                <button onClick={closeCreate} className="btn-primary w-full">
+                  Cerrar
+                </button>
               </div>
             ) : (
               <form onSubmit={handleSubmit(onCreateSubmit)} className="p-5 space-y-4 overflow-y-auto flex-1">

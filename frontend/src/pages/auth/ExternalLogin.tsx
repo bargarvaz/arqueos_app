@@ -10,6 +10,7 @@ import authService from '@/services/authService';
 import { useAuthStore } from '@/store/authStore';
 import { getErrorMessage } from '@/services/api';
 import { ROUTES } from '@/utils/constants';
+import ForgotPasswordModal from '@/components/auth/ForgotPasswordModal';
 
 const schema = z.object({
   email: z.string().email('Email inválido.'),
@@ -23,6 +24,7 @@ export default function ExternalLogin() {
   const { setUser } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
   const [serverError, setServerError] = useState('');
+  const [showForgot, setShowForgot] = useState(false);
 
   const {
     register,
@@ -129,6 +131,15 @@ export default function ExternalLogin() {
                 {errors.password && (
                   <p className="text-status-error text-xs mt-1">{errors.password.message}</p>
                 )}
+                <div className="text-right mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowForgot(true)}
+                    className="text-xs text-secondary-dark hover:underline focus:outline-none"
+                  >
+                    ¿Olvidaste tu contraseña?
+                  </button>
+                </div>
               </div>
 
               {serverError && (
@@ -155,6 +166,12 @@ export default function ExternalLogin() {
           </a>
         </p>
       </div>
+
+      <ForgotPasswordModal
+        open={showForgot}
+        onClose={() => setShowForgot(false)}
+        accent="secondary"
+      />
     </div>
   );
 }
