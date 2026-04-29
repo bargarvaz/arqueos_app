@@ -74,14 +74,22 @@ async def create_error_report(
     description: str,
     record_ids: list[int],
     arqueo_header_id: int | None,
+    error_type_id: int,
 ) -> ErrorReport:
     """
     Crea un reporte de error.
     - reported_by: usuario Operations/Admin
     - assigned_to: usuario ETV al que se asigna. Si es None y arqueo_header_id
       está presente, se autoresuelve desde la bóveda.
+    - error_type_id: tipo de error (catálogo). Obligatorio.
     - Notifica al ETV
     """
+    # Validar tipo de error
+    from app.catalogs.models import ErrorType
+    et = await db.get(ErrorType, error_type_id)
+    if et is None or not et.is_active:
+        raise BusinessRuleError("Tipo de error inválido o inactivo.")
+
     if assigned_to is None:
         if arqueo_header_id is None:
             raise BusinessRuleError(
@@ -99,6 +107,7 @@ async def create_error_report(
         reported_by=reported_by,
         assigned_to=assigned_to,
         arqueo_header_id=arqueo_header_id,
+        error_type_id=error_type_id,
         description=description,
         status=ErrorReportStatus.open,
     )

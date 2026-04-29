@@ -27,6 +27,13 @@ export interface Sucursal {
   is_active: boolean;
 }
 
+export interface ErrorType {
+  id: number;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+}
+
 const catalogService = {
   // ─── Tipos de movimiento ─────────────────────────────────────────────────
   getMovementTypes: async (includeInactive = false): Promise<MovementType[]> => {
@@ -109,6 +116,33 @@ const catalogService = {
     updates: Partial<{ name: string; is_active: boolean }>,
   ): Promise<Sucursal> => {
     const { data } = await api.patch(`/catalogs/sucursales/${id}`, updates);
+    return data;
+  },
+
+  // ─── Tipos de error ───────────────────────────────────────────────────────
+  getErrorTypes: async (includeInactive = false): Promise<ErrorType[]> => {
+    const { data } = await api.get('/catalogs/error-types', {
+      params: { include_inactive: includeInactive },
+    });
+    return data;
+  },
+
+  createErrorType: async (
+    name: string,
+    description?: string,
+  ): Promise<ErrorType> => {
+    const { data } = await api.post('/catalogs/error-types', {
+      name,
+      description,
+    });
+    return data;
+  },
+
+  updateErrorType: async (
+    id: number,
+    updates: Partial<{ name: string; description: string; is_active: boolean }>,
+  ): Promise<ErrorType> => {
+    const { data } = await api.patch(`/catalogs/error-types/${id}`, updates);
     return data;
   },
 };

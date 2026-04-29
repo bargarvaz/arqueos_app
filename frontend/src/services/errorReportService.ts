@@ -26,6 +26,8 @@ export interface ErrorReport {
   vault_id: number | null;
   vault_code: string | null;
   vault_name: string | null;
+  error_type_id: number | null;
+  error_type_name: string | null;
   status: ErrorReportStatus;
   description: string;
   response: string | null;
@@ -59,6 +61,7 @@ const errorReportService = {
     description: string;
     arqueo_header_id?: number | null;
     record_ids?: number[];
+    error_type_id: number;
   }): Promise<ErrorReport> => {
     const { data } = await api.post<ErrorReport>('/error-reports', payload);
     return data;

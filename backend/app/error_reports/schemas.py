@@ -16,6 +16,7 @@ class CreateErrorReportRequest(BaseModel):
     """
     assigned_to: int | None = None
     arqueo_header_id: int | None = None
+    error_type_id: int = Field(..., description="ID del tipo de error (catálogo)")
     description: str = Field(min_length=10, max_length=2000)
     record_ids: list[int] = []  # arqueo_record IDs afectados
 
@@ -59,6 +60,8 @@ class ErrorReportResponse(BaseModel):
     vault_id: int | None = None
     vault_code: str | None = None
     vault_name: str | None = None
+    error_type_id: int | None = None
+    error_type_name: str | None = None
     status: ErrorReportStatus
     description: str
     response: str | None

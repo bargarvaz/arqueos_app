@@ -45,6 +45,9 @@ class ErrorReport(Base):
     arqueo_header_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("arqueo_headers.id"), nullable=True
     )
+    error_type_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("error_types.id"), nullable=True, index=True
+    )
     status: Mapped[ErrorReportStatus] = mapped_column(
         Enum(ErrorReportStatus, name="error_report_status"), nullable=False,
         default=ErrorReportStatus.open

@@ -6,11 +6,12 @@ import catalogService, {
   type ModificationReason,
   type Holiday,
   type Sucursal,
+  type ErrorType,
 } from '@/services/catalogService';
 import userService, { type Company, type Empresa } from '@/services/userService';
 import { getErrorMessage } from '@/services/api';
 
-type CatalogTab = 'movement_types' | 'modification_reasons' | 'holidays' | 'etvs' | 'empresas' | 'sucursales';
+type CatalogTab = 'movement_types' | 'modification_reasons' | 'holidays' | 'etvs' | 'empresas' | 'sucursales' | 'error_types';
 
 export default function CatalogManager() {
   const [activeTab, setActiveTab] = useState<CatalogTab>('movement_types');
@@ -22,6 +23,7 @@ export default function CatalogManager() {
     { key: 'etvs', label: 'ETVs' },
     { key: 'empresas', label: 'Empresas' },
     { key: 'sucursales', label: 'Sucursales' },
+    { key: 'error_types', label: 'Tipos de Error' },
   ];
 
   return (
@@ -51,6 +53,7 @@ export default function CatalogManager() {
       {activeTab === 'etvs' && <EtvsCatalog />}
       {activeTab === 'empresas' && <EmpresasCatalog />}
       {activeTab === 'sucursales' && <SucursalesCatalog />}
+      {activeTab === 'error_types' && <ErrorTypesCatalog />}
     </div>
   );
 }
@@ -595,6 +598,132 @@ function SucursalesCatalog() {
     </CatalogTable>
   );
 }
+
+// ─── Tipos de error (catálogo para reportes) ─────────────────────────────────
+
+function ErrorTypesCatalog() {
+  const [items, setItems] = useState<ErrorType[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [formData, setFormData] = useState({ name: '', description: '' });
+  const [error, setError] = useState('');
+  const [includeInactive, setIncludeInactive] = useState(false);
+
+  useEffect(() => { load(); }, [includeInactive]);
+
+  const load = async () => {
+    const data = await catalogService.getErrorTypes(includeInactive);
+    setItems(data);
+  };
+
+  const handleSubmit = async () => {
+    setError('');
+    try {
+      if (editId) {
+        await catalogService.updateErrorType(editId, {
+          name: formData.name,
+          description: formData.description || undefined,
+        });
+      } else {
+        await catalogService.createErrorType(
+          formData.name,
+          formData.description || undefined,
+        );
+      }
+      setShowForm(false);
+      setEditId(null);
+      setFormData({ name: '', description: '' });
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  };
+
+  const handleToggle = async (item: ErrorType) => {
+    try {
+      await catalogService.updateErrorType(item.id, { is_active: !item.is_active });
+      await load();
+    } catch (err) {
+      alert(getErrorMessage(err));
+    }
+  };
+
+  return (
+    <CatalogTable
+      title="Tipos de Error"
+      items={items}
+      columns={['Nombre', 'Descripción', 'Estado', 'Acciones']}
+      renderRow={(item: ErrorType) => (
+        <>
+          <td className="px-4 py-3 font-medium">{item.name}</td>
+          <td className="px-4 py-3 text-text-secondary text-sm">
+            {item.description || '—'}
+          </td>
+          <td className="px-4 py-3"><StatusBadge active={item.is_active} /></td>
+          <td className="px-4 py-3">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setEditId(item.id);
+                  setFormData({
+                    name: item.name,
+                    description: item.description || '',
+                  });
+                  setShowForm(true);
+                }}
+                className="btn-ghost text-xs px-2 py-1"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => handleToggle(item)}
+                className={`text-xs px-2 py-1 rounded ${
+                  item.is_active
+                    ? 'text-status-error hover:bg-status-error-light'
+                    : 'text-status-success hover:bg-status-success-light'
+                }`}
+              >
+                {item.is_active ? 'Desactivar' : 'Activar'}
+              </button>
+            </div>
+          </td>
+        </>
+      )}
+      onAdd={() => {
+        setEditId(null);
+        setFormData({ name: '', description: '' });
+        setShowForm(true);
+      }}
+      includeInactive={includeInactive}
+      onToggleInactive={() => setIncludeInactive(!includeInactive)}
+    >
+      {showForm && (
+        <InlineForm
+          error={error}
+          onCancel={() => setShowForm(false)}
+          onSubmit={handleSubmit}
+          isEdit={!!editId}
+        >
+          <input
+            className="input"
+            placeholder="Nombre del tipo de error *"
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+          />
+          <input
+            className="input"
+            placeholder="Descripción (opcional)"
+            value={formData.description}
+            onChange={(e) =>
+              setFormData({ ...formData, description: e.target.value })
+            }
+          />
+        </InlineForm>
+      )}
+    </CatalogTable>
+  );
+}
+
 
 // ─── Componentes compartidos ──────────────────────────────────────────────────
 

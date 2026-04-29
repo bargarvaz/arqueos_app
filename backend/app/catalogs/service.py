@@ -6,11 +6,13 @@ from typing import TypeVar, Type
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 
-from app.catalogs.models import MovementType, ModificationReason, Holiday, Sucursal
+from app.catalogs.models import MovementType, ModificationReason, Holiday, Sucursal, ErrorType
 from app.common.exceptions import NotFoundError, ConflictError
 from app.common.pagination import PaginationParams
 
-CatalogModel = TypeVar("CatalogModel", MovementType, ModificationReason, Holiday, Sucursal)
+CatalogModel = TypeVar(
+    "CatalogModel", MovementType, ModificationReason, Holiday, Sucursal, ErrorType
+)
 
 
 async def list_catalog(
@@ -127,6 +129,29 @@ async def create_sucursal(db: AsyncSession, name: str) -> Sucursal:
 
 async def update_sucursal(db: AsyncSession, item_id: int, **kwargs) -> Sucursal:
     item = await get_catalog_item(db, Sucursal, item_id)
+    for key, value in kwargs.items():
+        if value is not None:
+            setattr(item, key, value)
+    await db.commit()
+    await db.refresh(item)
+    return item
+
+
+async def create_error_type(
+    db: AsyncSession, name: str, description: str | None
+) -> ErrorType:
+    result = await db.execute(select(ErrorType).where(ErrorType.name == name))
+    if result.scalar_one_or_none():
+        raise ConflictError(f"Ya existe un tipo de error llamado '{name}'.")
+    item = ErrorType(name=name, description=description)
+    db.add(item)
+    await db.commit()
+    await db.refresh(item)
+    return item
+
+
+async def update_error_type(db: AsyncSession, item_id: int, **kwargs) -> ErrorType:
+    item = await get_catalog_item(db, ErrorType, item_id)
     for key, value in kwargs.items():
         if value is not None:
             setattr(item, key, value)

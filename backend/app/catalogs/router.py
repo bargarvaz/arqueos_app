@@ -4,12 +4,13 @@
 from fastapi import APIRouter, Depends, Query, status
 
 from app.catalogs import service as catalog_service
-from app.catalogs.models import MovementType, ModificationReason, Holiday, Sucursal
+from app.catalogs.models import MovementType, ModificationReason, Holiday, Sucursal, ErrorType
 from app.catalogs.schemas import (
     MovementTypeCreate, MovementTypeUpdate, MovementTypeResponse,
     ModificationReasonCreate, ModificationReasonUpdate, ModificationReasonResponse,
     HolidayCreate, HolidayUpdate, HolidayResponse,
     SucursalCreate, SucursalUpdate, SucursalResponse,
+    ErrorTypeCreate, ErrorTypeUpdate, ErrorTypeResponse,
 )
 from app.dependencies import require_admin, get_current_user, DbSession
 
@@ -129,4 +130,38 @@ async def update_sucursal(
 ):
     return await catalog_service.update_sucursal(
         db, item_id, name=body.name, is_active=body.is_active
+    )
+
+
+# ─── Tipos de error ──────────────────────────────────────────────────────────
+
+@router.get("/error-types", response_model=list[ErrorTypeResponse])
+async def list_error_types(
+    db: DbSession,
+    _=Depends(get_current_user),
+    include_inactive: bool = Query(default=False),
+    search: str | None = Query(default=None),
+):
+    return await catalog_service.list_catalog(db, ErrorType, include_inactive, search)
+
+
+@router.post(
+    "/error-types",
+    response_model=ErrorTypeResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_error_type(body: ErrorTypeCreate, db: DbSession, admin=AdminUser):
+    return await catalog_service.create_error_type(db, body.name, body.description)
+
+
+@router.patch("/error-types/{item_id}", response_model=ErrorTypeResponse)
+async def update_error_type(
+    item_id: int, body: ErrorTypeUpdate, db: DbSession, admin=AdminUser
+):
+    return await catalog_service.update_error_type(
+        db,
+        item_id,
+        name=body.name,
+        description=body.description,
+        is_active=body.is_active,
     )

@@ -172,6 +172,11 @@ export default function EtvErrorReports() {
                         <span className={`text-xs ${STATUS_BADGE[r.status] ?? 'badge-neutral'}`}>
                           {STATUS_LABELS[r.status] ?? r.status}
                         </span>
+                        {r.error_type_name && (
+                          <span className="badge-warning text-xs">
+                            {r.error_type_name}
+                          </span>
+                        )}
                         {r.vault_code && (
                           <span className="text-xs flex items-center gap-1 text-text-secondary">
                             <VaultIcon className="w-3 h-3" />

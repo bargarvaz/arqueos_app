@@ -40,7 +40,7 @@ async def _to_response_enriched(db, report) -> dict:
     from app.arqueos.models import ArqueoHeader, ArqueoRecord
     from app.vaults.models import Vault
     from app.users.models import User as UserModel
-    from app.catalogs.models import MovementType, Sucursal
+    from app.catalogs.models import MovementType, Sucursal, ErrorType
     from sqlalchemy import select
 
     base = _to_response(report)
@@ -52,6 +52,12 @@ async def _to_response_enriched(db, report) -> dict:
     if report.assigned_to:
         u = await db.get(UserModel, report.assigned_to)
         base["assigned_to_name"] = u.full_name if u else None
+
+    # Tipo de error
+    if report.error_type_id:
+        et = await db.get(ErrorType, report.error_type_id)
+        base["error_type_id"] = report.error_type_id
+        base["error_type_name"] = et.name if et else None
 
     # Bóveda y fecha del header
     if report.arqueo_header_id:
@@ -136,6 +142,7 @@ async def create_error_report(
         description=body.description,
         record_ids=body.record_ids,
         arqueo_header_id=body.arqueo_header_id,
+        error_type_id=body.error_type_id,
     )
     return await _to_response_enriched(db, report)
 

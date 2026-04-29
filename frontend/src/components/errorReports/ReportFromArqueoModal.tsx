@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { X, AlertTriangle, Send } from 'lucide-react';
 
 import errorReportService from '@/services/errorReportService';
+import catalogService, { type ErrorType } from '@/services/catalogService';
 import { getErrorMessage } from '@/services/api';
 
 interface RecordInfo {
@@ -53,6 +54,8 @@ export default function ReportFromArqueoModal({
   );
   const [preview, setPreview] = useState<AssigneePreview | null>(null);
   const [previewError, setPreviewError] = useState('');
+  const [errorTypes, setErrorTypes] = useState<ErrorType[]>([]);
+  const [errorTypeId, setErrorTypeId] = useState<number | ''>('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -72,6 +75,13 @@ export default function ReportFromArqueoModal({
       });
   }, [arqueoHeaderId]);
 
+  useEffect(() => {
+    catalogService
+      .getErrorTypes(false)
+      .then(setErrorTypes)
+      .catch(() => setErrorTypes([]));
+  }, []);
+
   const toggle = (id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -82,6 +92,10 @@ export default function ReportFromArqueoModal({
   };
 
   const handleSubmit = async () => {
+    if (!errorTypeId) {
+      setError('Selecciona el tipo de error.');
+      return;
+    }
     if (description.trim().length < 10) {
       setError('La descripción debe tener al menos 10 caracteres.');
       return;
@@ -91,6 +105,7 @@ export default function ReportFromArqueoModal({
     try {
       await errorReportService.create({
         arqueo_header_id: arqueoHeaderId,
+        error_type_id: errorTypeId,
         description: description.trim(),
         record_ids: Array.from(selectedIds),
         // assigned_to se autoresuelve en backend
@@ -106,6 +121,7 @@ export default function ReportFromArqueoModal({
 
   const canSubmit =
     !!preview?.assigned_user_id &&
+    !!errorTypeId &&
     description.trim().length >= 10 &&
     !submitting;
 
@@ -192,6 +208,34 @@ export default function ReportFromArqueoModal({
               )}
             </div>
           )}
+
+          <div>
+            <label className="label">
+              Tipo de error <span className="text-error">*</span>
+            </label>
+            <select
+              className={
+                error && !errorTypeId ? 'input-error' : 'input'
+              }
+              value={errorTypeId}
+              onChange={(e) =>
+                setErrorTypeId(e.target.value === '' ? '' : Number(e.target.value))
+              }
+            >
+              <option value="">Selecciona un tipo…</option>
+              {errorTypes.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+            {errorTypes.length === 0 && (
+              <p className="text-text-muted text-xs mt-1">
+                No hay tipos de error configurados. Pide al admin que agregue
+                opciones en Catálogos.
+              </p>
+            )}
+          </div>
 
           <div>
             <label className="label">

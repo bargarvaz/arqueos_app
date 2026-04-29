@@ -80,9 +80,12 @@ export default {
         'ring-secondary': '0 0 0 4px rgba(184, 134, 11, 0.14)',
       },
       keyframes: {
+        // Solo opacidad: NO transform. Un transform en un ancestro crea un
+        // nuevo containing block y rompe `position: fixed` de los modales
+        // (el overlay no cubre el header que vive fuera de <main>).
         'fade-in': {
-          '0%': { opacity: '0', transform: 'translateY(2px)' },
-          '100%': { opacity: '1', transform: 'translateY(0)' },
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
         },
       },
       animation: {

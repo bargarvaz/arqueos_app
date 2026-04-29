@@ -7,12 +7,14 @@ import { z } from 'zod';
 
 import errorReportService, { type ErrorReport } from '@/services/errorReportService';
 import userService, { type UserResponse } from '@/services/userService';
+import catalogService, { type ErrorType } from '@/services/catalogService';
 import { formatDatetime } from '@/utils/formatters';
 import { getErrorMessage } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
 
 const createSchema = z.object({
   assigned_to: z.number({ invalid_type_error: 'Selecciona un ETV.' }).min(1, 'Requerido.'),
+  error_type_id: z.number({ invalid_type_error: 'Selecciona un tipo.' }).min(1, 'Tipo de error requerido.'),
   description: z.string().min(10, 'Mínimo 10 caracteres.').max(2000),
   arqueo_header_id: z.number().nullable().optional(),
 });
@@ -45,6 +47,7 @@ export default function ErrorReports() {
   const [isLoading, setIsLoading] = useState(false);
 
   const [etvUsers, setEtvUsers] = useState<UserResponse[]>([]);
+  const [errorTypes, setErrorTypes] = useState<ErrorType[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [createError, setCreateError] = useState('');
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
@@ -87,6 +90,7 @@ export default function ErrorReports() {
       userService.listUsers({ role: 'etv', is_active: true, page_size: 0 })
         .then(d => setEtvUsers(d.items))
         .catch(() => {});
+      catalogService.getErrorTypes(false).then(setErrorTypes).catch(() => {});
     }
   }, [canCreate]);
 
@@ -95,6 +99,7 @@ export default function ErrorReports() {
     try {
       await errorReportService.create({
         assigned_to: data.assigned_to,
+        error_type_id: data.error_type_id,
         description: data.description,
         arqueo_header_id: data.arqueo_header_id ?? null,
       });
@@ -172,6 +177,11 @@ export default function ErrorReports() {
                         <span className={`text-xs ${STATUS_BADGE[r.status] ?? 'badge-neutral'}`}>
                           {STATUS_LABELS[r.status] ?? r.status}
                         </span>
+                        {r.error_type_name && (
+                          <span className="badge-warning text-xs">
+                            {r.error_type_name}
+                          </span>
+                        )}
                         {r.vault_code && (
                           <span className="text-xs flex items-center gap-1 text-text-secondary">
                             <VaultIcon className="w-3 h-3" />
@@ -326,6 +336,30 @@ export default function ErrorReports() {
                   ))}
                 </select>
                 {errors.assigned_to && <p className="text-status-error text-xs mt-1">{errors.assigned_to.message}</p>}
+              </div>
+              <div>
+                <label className="label">
+                  Tipo de error <span className="text-status-error">*</span>
+                </label>
+                <select
+                  className={errors.error_type_id ? 'input-error' : 'input'}
+                  {...register('error_type_id', { valueAsNumber: true })}
+                >
+                  <option value="">Seleccionar tipo...</option>
+                  {errorTypes.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                {errors.error_type_id && (
+                  <p className="text-status-error text-xs mt-1">
+                    {errors.error_type_id.message}
+                  </p>
+                )}
+                {errorTypes.length === 0 && (
+                  <p className="text-text-muted text-xs mt-1">
+                    No hay tipos de error configurados. Agrega opciones desde Catálogos.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="label">ID de Arqueo (opcional)</label>
