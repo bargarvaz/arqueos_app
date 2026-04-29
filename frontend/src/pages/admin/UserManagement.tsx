@@ -520,18 +520,8 @@ export default function UserManagement() {
         </div>
       )}
 
-      {/* Filtros */}
+      {/* Toggle activos / inactivos */}
       <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <select
-          value={roleFilter}
-          onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }}
-          className="input w-44 text-sm"
-        >
-          <option value="">Todos los roles</option>
-          {ROLE_OPTIONS.map(r => (
-            <option key={r.value} value={r.value}>{r.label}</option>
-          ))}
-        </select>
         <button
           type="button"
           onClick={() => { setShowActive((v) => !v); setPage(1); }}
@@ -552,10 +542,26 @@ export default function UserManagement() {
             </>
           )}
         </button>
-        <span className="text-xs text-text-muted ml-auto">
+        <span className="text-xs text-text-muted">
           Mostrando: <strong className="text-text-primary">
             {showActive ? 'activos' : 'inactivos'}
           </strong>
+          {roleFilter && (
+            <>
+              {' · '}rol:{' '}
+              <strong className="text-text-primary">
+                {ROLE_OPTIONS.find((r) => r.value === roleFilter)?.label ?? roleFilter}
+              </strong>
+              <button
+                type="button"
+                onClick={() => { setRoleFilter(''); setPage(1); }}
+                className="ml-1.5 text-primary hover:underline"
+                title="Quitar filtro por rol"
+              >
+                limpiar
+              </button>
+            </>
+          )}
         </span>
       </div>
 
