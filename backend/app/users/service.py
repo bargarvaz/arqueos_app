@@ -14,6 +14,17 @@ from app.common.pagination import PaginationParams
 logger = logging.getLogger(__name__)
 
 
+async def get_primary_admin_id(db: AsyncSession) -> int | None:
+    """Devuelve el id del admin "principal" — el de menor id. Es la cuenta
+    protegida que nunca puede desactivarse. Si no hay admins (caso degradado)
+    devuelve None."""
+    from sqlalchemy import func
+    result = await db.execute(
+        select(func.min(User.id)).where(User.role == UserRole.admin)
+    )
+    return result.scalar_one_or_none()
+
+
 async def create_user(
     db: AsyncSession,
     *,
@@ -181,13 +192,15 @@ async def update_user(
     if "puesto" in explicit:
         user.puesto = puesto
     if "is_active" in explicit and is_active is not None:
-        # Los administradores no pueden desactivarse: protege contra
-        # autoexclusión accidental y mantiene siempre al menos un canal de
-        # acceso al sistema.
-        if user.role == UserRole.admin and not is_active:
-            raise BusinessRuleError(
-                "Las cuentas con rol administrador no pueden desactivarse."
-            )
+        # El admin principal (la cuenta de menor id con rol admin) nunca puede
+        # desactivarse. Protege contra autoexclusión y garantiza que siempre
+        # haya un canal de control. Otros admins sí pueden desactivarse.
+        if not is_active and user.role == UserRole.admin:
+            primary_id = await get_primary_admin_id(db)
+            if primary_id == user.id:
+                raise BusinessRuleError(
+                    "La cuenta de administrador principal no puede desactivarse."
+                )
         user.is_active = is_active
     if "company_id" in explicit:
         user.company_id = company_id

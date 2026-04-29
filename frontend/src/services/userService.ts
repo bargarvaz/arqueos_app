@@ -29,6 +29,9 @@ export interface UserResponse {
   is_active: boolean;
   must_change_password: boolean;
   mfa_enabled: boolean;
+  /** True solo para el admin principal (la cuenta admin de menor id). No
+   * puede desactivarse. */
+  is_primary_admin?: boolean;
 }
 
 export interface UserDetailResponse extends UserResponse {

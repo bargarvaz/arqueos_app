@@ -416,10 +416,10 @@ export default function UserManagement() {
               <KeyRound className="w-3.5 h-3.5" />
               Reset
             </button>
-            {u.role === 'admin' ? (
+            {u.is_primary_admin ? (
               <span
                 className="flex items-center gap-1 text-xs text-text-muted px-2 py-1"
-                title="Las cuentas administrador no pueden desactivarse."
+                title="La cuenta de administrador principal no puede desactivarse."
               >
                 Protegida
               </span>

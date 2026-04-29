@@ -232,7 +232,13 @@ async def list_users(
     users, total = await user_service.list_users(
         db, params, role=role, user_type=user_type, is_active=is_active, search=search
     )
-    return PagedResponse.build(users, total, params)
+    primary_admin_id = await user_service.get_primary_admin_id(db)
+    items: list[UserResponse] = []
+    for u in users:
+        item = UserResponse.model_validate(u)
+        item.is_primary_admin = u.id == primary_admin_id
+        items.append(item)
+    return PagedResponse.build(items, total, params)
 
 
 # ─── Rutas con /{user_id} AL FINAL para no capturar rutas específicas ─────────
@@ -242,8 +248,10 @@ async def get_user(user_id: int, db: DbSession, admin=AdminUser):
     """Obtiene detalle de un usuario."""
     user = await user_service.get_user(db, user_id)
     vault_ids = await user_service.get_user_assigned_vault_ids(db, user_id)
+    primary_admin_id = await user_service.get_primary_admin_id(db)
     response = UserDetailResponse.model_validate(user)
     response.assigned_vault_ids = vault_ids
+    response.is_primary_admin = user.id == primary_admin_id
     return response
 
 
@@ -272,7 +280,10 @@ async def update_user(
         ip_address=ip,
         user_agent=ua,
     )
-    return user
+    primary_admin_id = await user_service.get_primary_admin_id(db)
+    response = UserResponse.model_validate(user)
+    response.is_primary_admin = user.id == primary_admin_id
+    return response
 
 
 @router.post("/{user_id}/reset-password", response_model=PasswordResetResponse)

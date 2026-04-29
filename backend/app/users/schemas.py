@@ -89,6 +89,9 @@ class UserResponse(BaseModel):
     is_active: bool
     must_change_password: bool
     mfa_enabled: bool
+    # True solo para el admin con menor id (cuenta semilla / principal). Nunca
+    # puede desactivarse para garantizar que siempre haya control administrativo.
+    is_primary_admin: bool = False
 
     model_config = {"from_attributes": True}
 
