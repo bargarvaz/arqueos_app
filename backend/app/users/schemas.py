@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """Schemas Pydantic del módulo de usuarios."""
 
-from pydantic import BaseModel, EmailStr, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from app.users.models import UserRole, UserType, EtvSubrole
 
 
 class CompanyCreate(BaseModel):
-    name: str
+    name: str = Field(min_length=2, max_length=150)
 
 
 class CompanyResponse(BaseModel):
@@ -18,12 +18,12 @@ class CompanyResponse(BaseModel):
 
 
 class EmpresaCreate(BaseModel):
-    name: str
+    name: str = Field(min_length=2, max_length=150)
     etv_id: int
 
 
 class EmpresaUpdate(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, min_length=2, max_length=150)
     etv_id: int | None = None
 
 

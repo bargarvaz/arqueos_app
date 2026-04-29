@@ -8,6 +8,7 @@ Estructura MinIO:
 
 import logging
 import io
+import re
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 
@@ -28,6 +29,20 @@ MAX_CERTIFICATES_PER_ARQUEO = 10
 ALLOWED_CONTENT_TYPES = {"application/pdf"}
 
 
+_PATH_SAFE = re.compile(r"[^A-Za-z0-9_-]+")
+
+
+def _sanitize_path_component(value: str, fallback: str = "x") -> str:
+    """Whitelist estricta para componentes de ruta en MinIO.
+
+    Reemplaza espacios por `_` y descarta cualquier otro caracter fuera del
+    set `[A-Za-z0-9_-]`. Bloquea path traversal (`..`, `/`, control chars,
+    unicode raro).
+    """
+    cleaned = _PATH_SAFE.sub("", value.replace(" ", "_")).strip("._-")
+    return cleaned or fallback
+
+
 def _build_minio_key(
     company_name: str,
     vault_code: str,
@@ -37,10 +52,11 @@ def _build_minio_key(
     """Construye la ruta del objeto en MinIO."""
     year = arqueo_date.strftime("%Y")
     month = arqueo_date.strftime("%m")
-    filename = f"{vault_code}_{arqueo_date}_{timestamp_str}.pdf"
-    # Sanitizar company_name para uso en path
-    safe_company = company_name.replace(" ", "_").replace("/", "-")
-    return f"{safe_company}/{vault_code}/{year}/{month}/{filename}"
+    safe_company = _sanitize_path_component(company_name, "company")
+    safe_vault = _sanitize_path_component(vault_code, "vault")
+    safe_ts = _sanitize_path_component(timestamp_str, "ts")
+    filename = f"{safe_vault}_{arqueo_date}_{safe_ts}.pdf"
+    return f"{safe_company}/{safe_vault}/{year}/{month}/{filename}"
 
 
 async def upload_certificate(

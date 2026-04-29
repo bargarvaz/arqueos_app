@@ -16,7 +16,7 @@ from app.vaults.schemas import (
     BranchCreate, BranchUpdate, BranchResponse,
 )
 from app.common.pagination import PaginationParams, PagedResponse
-from app.dependencies import require_admin, get_current_user, DbSession
+from app.dependencies import require_admin, require_roles, get_current_user, DbSession
 
 router = APIRouter(prefix="/vaults", tags=["Bóvedas"])
 
@@ -127,7 +127,9 @@ async def create_vault(
 @router.get("/", response_model=PagedResponse[VaultResponse])
 async def list_vaults(
     db: DbSession,
-    _=Depends(get_current_user),
+    # Solo roles internos pueden listar todas las bóvedas. ETV consulta
+    # `/arqueos/my-vaults` que devuelve solo las asignadas.
+    _=Depends(require_roles("admin", "operations", "data_science")),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25),
     include_inactive: bool = Query(default=False),
@@ -152,7 +154,16 @@ async def list_vaults(
 # ─── Rutas con /{vault_id} AL FINAL ──────────────────────────────────────────
 
 @router.get("/{vault_id}", response_model=VaultResponse)
-async def get_vault(vault_id: int, db: DbSession, _=Depends(get_current_user)):
+async def get_vault(
+    vault_id: int,
+    db: DbSession,
+    current_user=Depends(get_current_user),
+):
+    # ETV solo puede ver el detalle de bóvedas que tiene asignadas
+    if current_user.role == "etv":
+        from app.arqueos.service import _verify_vault_assignment
+        await _verify_vault_assignment(db, current_user.id, vault_id)
+
     vault = await vault_service.get_vault(db, vault_id)
     balances = await vault_service.get_current_balances(db, [vault.id])
     item = VaultResponse.model_validate(vault)

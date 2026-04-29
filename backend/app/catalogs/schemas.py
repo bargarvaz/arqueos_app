@@ -2,19 +2,19 @@
 """Schemas Pydantic para catálogos."""
 
 from datetime import date
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ─── MovementType ─────────────────────────────────────────────────────────────
 
 class MovementTypeCreate(BaseModel):
-    name: str
-    description: str | None = None
+    name: str = Field(min_length=2, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
 
 
 class MovementTypeUpdate(BaseModel):
-    name: str | None = None
-    description: str | None = None
+    name: str | None = Field(default=None, min_length=2, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
     is_active: bool | None = None
 
 
@@ -30,11 +30,11 @@ class MovementTypeResponse(BaseModel):
 # ─── ModificationReason ───────────────────────────────────────────────────────
 
 class ModificationReasonCreate(BaseModel):
-    name: str
+    name: str = Field(min_length=2, max_length=200)
 
 
 class ModificationReasonUpdate(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, min_length=2, max_length=200)
     is_active: bool | None = None
 
 
@@ -50,11 +50,11 @@ class ModificationReasonResponse(BaseModel):
 
 class HolidayCreate(BaseModel):
     holiday_date: date
-    name: str
+    name: str = Field(min_length=2, max_length=200)
 
 
 class HolidayUpdate(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, min_length=2, max_length=200)
     is_active: bool | None = None
 
 
@@ -70,11 +70,11 @@ class HolidayResponse(BaseModel):
 # ─── Sucursal ─────────────────────────────────────────────────────────────────
 
 class SucursalCreate(BaseModel):
-    name: str
+    name: str = Field(min_length=2, max_length=150)
 
 
 class SucursalUpdate(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, min_length=2, max_length=150)
     is_active: bool | None = None
 
 

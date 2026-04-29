@@ -58,6 +58,29 @@ def register_exception_handlers(app: FastAPI) -> None:
             content={"detail": exc.message},
         )
 
+    @app.exception_handler(ValidationError)
+    async def pydantic_validation_handler(
+        request: Request, exc: ValidationError
+    ) -> JSONResponse:
+        """Pydantic ValidationError lanzado fuera del pipeline de FastAPI
+        (p.ej. al instanciar un BaseModel manualmente en el router).
+        Se devuelve 422 con la misma forma que RequestValidationError."""
+        errors = []
+        for error in exc.errors():
+            loc = list(error.get("loc", []))
+            field = ".".join(str(p) for p in loc) or "campo"
+            errors.append({"field": field, "message": error["msg"]})
+        detail = (
+            "Error de validación: " + "; ".join(
+                f"{e['field']} → {e['message']}" for e in errors
+            )
+            if errors else "Error de validación."
+        )
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"detail": detail, "errors": errors},
+        )
+
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(
         request: Request, exc: RequestValidationError

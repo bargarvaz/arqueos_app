@@ -30,6 +30,7 @@ from app.arqueos.service import (
 from app.catalogs.service import get_last_business_day_of_month
 from app.modifications.models import ArqueoModification, ModificationType
 from app.common.exceptions import NotFoundError, ForbiddenError, BusinessRuleError
+from app.common.background import fire_and_forget
 from app.common.id_generator import generate_unique_uid
 from app.audit.service import log_action
 import asyncio
@@ -336,7 +337,10 @@ async def cancel_record(
     await db.refresh(counterpart)
 
     # Cascada asíncrona
-    asyncio.create_task(_cascade_task(header.vault_id, header.arqueo_date))
+    fire_and_forget(
+        _cascade_task(header.vault_id, header.arqueo_date),
+        name=f"cascade-modification-{header.vault_id}",
+    )
 
     return counterpart
 
@@ -478,7 +482,10 @@ async def edit_record(
     await db.commit()
     await db.refresh(corrected)
 
-    asyncio.create_task(_cascade_task(header.vault_id, header.arqueo_date))
+    fire_and_forget(
+        _cascade_task(header.vault_id, header.arqueo_date),
+        name=f"cascade-modification-{header.vault_id}",
+    )
 
     return corrected
 
@@ -583,7 +590,10 @@ async def add_record(
     await db.commit()
     await db.refresh(new_record)
 
-    asyncio.create_task(_cascade_task(header.vault_id, header.arqueo_date))
+    fire_and_forget(
+        _cascade_task(header.vault_id, header.arqueo_date),
+        name=f"cascade-modification-{header.vault_id}",
+    )
 
     return new_record
 

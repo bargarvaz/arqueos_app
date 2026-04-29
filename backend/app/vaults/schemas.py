@@ -51,11 +51,11 @@ class InitialDenominations(BaseModel):
 # ─── Branch ───────────────────────────────────────────────────────────────────
 
 class BranchCreate(BaseModel):
-    name: str
+    name: str = Field(min_length=2, max_length=150)
 
 
 class BranchUpdate(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, min_length=2, max_length=150)
     is_active: bool | None = None
 
 

@@ -23,6 +23,7 @@ from app.common.exceptions import (
     ValidationAppError,
 )
 from app.common.id_generator import generate_unique_uid
+from app.common.background import fire_and_forget
 
 logger = logging.getLogger(__name__)
 
@@ -352,10 +353,16 @@ async def publish_arqueo(
     5. Notifica a Operaciones
     6. Inicia recálculo en cascada de días posteriores
     """
-    # 1. Verificar asignación
+    # 1. Validar que la fecha no sea futura
+    if arqueo_date > date.today():
+        raise BusinessRuleError(
+            "No se puede publicar un arqueo con fecha futura."
+        )
+
+    # 2. Verificar asignación
     await _verify_vault_assignment(db, user_id, vault_id)
 
-    # 2. Obtener/crear header
+    # 3. Obtener/crear header
     header = await get_or_create_header(db, vault_id, arqueo_date, user_id)
 
     # 3. Optimistic locking — comparar updated_at
@@ -489,10 +496,13 @@ async def publish_arqueo(
     await db.refresh(header)
 
     # 9. Recálculo en cascada (asíncrono, dentro de nueva sesión)
-    asyncio.create_task(_cascade_task(vault_id, arqueo_date))
+    fire_and_forget(
+        _cascade_task(vault_id, arqueo_date),
+        name=f"cascade-vault-{vault_id}",
+    )
 
     # 10. Notificaciones reales
-    asyncio.create_task(
+    fire_and_forget(
         _notify_publish_task(
             vault_id=vault_id,
             arqueo_date=arqueo_date,
@@ -501,7 +511,8 @@ async def publish_arqueo(
             negative_balance=negative_balance,
             is_holiday=is_holiday,
             published_by=user_id,
-        )
+        ),
+        name=f"notify-publish-{header.id}",
     )
 
     return header

@@ -218,7 +218,7 @@ async def create_user(
 @router.get("/", response_model=PagedResponse[UserResponse])
 async def list_users(
     db: DbSession,
-    _=Depends(get_current_user),
+    _=AdminUser,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25),
     role: str | None = Query(default=None),
@@ -226,7 +226,8 @@ async def list_users(
     is_active: bool | None = Query(default=None),
     search: str | None = Query(default=None),
 ):
-    """Lista usuarios con filtros y paginación. Accesible a todos los usuarios autenticados."""
+    """Lista usuarios con filtros y paginación. Solo admin: el listado expone
+    correos y datos personales."""
     params = PaginationParams(page=page, page_size=page_size)
     users, total = await user_service.list_users(
         db, params, role=role, user_type=user_type, is_active=is_active, search=search

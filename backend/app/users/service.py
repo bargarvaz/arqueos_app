@@ -8,7 +8,7 @@ from sqlalchemy import select, and_
 from app.users.models import User, Company, UserVaultAssignment, UserRole, UserType, EtvSubrole
 from app.audit.service import log_action
 from app.auth.utils import hash_password, generate_temp_password
-from app.common.exceptions import NotFoundError, ConflictError, ForbiddenError
+from app.common.exceptions import NotFoundError, ConflictError, ForbiddenError, BusinessRuleError
 from app.common.pagination import PaginationParams
 
 logger = logging.getLogger(__name__)
@@ -261,6 +261,21 @@ async def assign_vaults(
 
     if user.role != UserRole.etv:
         raise ForbiddenError("Solo se pueden asignar bóvedas a usuarios ETV.")
+
+    # Validar que todas las bóvedas existen y están activas
+    if vault_ids:
+        from app.vaults.models import Vault
+        result = await db.execute(
+            select(Vault.id).where(
+                Vault.id.in_(vault_ids), Vault.is_active == True,
+            )
+        )
+        valid_ids = {row[0] for row in result.all()}
+        missing = [vid for vid in vault_ids if vid not in valid_ids]
+        if missing:
+            raise BusinessRuleError(
+                f"Las bóvedas {missing} no existen o no están activas."
+            )
 
     # Obtener asignaciones actuales
     result = await db.execute(

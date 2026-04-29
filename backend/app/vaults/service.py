@@ -11,6 +11,7 @@ import asyncio
 
 from app.vaults.models import Vault, Branch
 from app.audit.service import log_action
+from app.common.background import fire_and_forget
 from app.common.exceptions import NotFoundError, ConflictError
 from app.common.pagination import PaginationParams
 
@@ -193,7 +194,10 @@ async def update_vault_denominations(
     await db.refresh(vault)
 
     # Notificar fuera de la transacción principal (no bloquea respuesta)
-    asyncio.create_task(_notify_balance_reset_task(vault.id, admin_user_id))
+    fire_and_forget(
+        _notify_balance_reset_task(vault.id, admin_user_id),
+        name=f"notify-balance-reset-{vault.id}",
+    )
 
     return vault
 
@@ -393,8 +397,10 @@ async def reactivate_vault(
     await db.refresh(vault)
 
     # Notificar reactivación (no bloquea la respuesta)
-    _vault_id = vault.id
-    asyncio.create_task(_notify_reactivation_task(_vault_id))
+    fire_and_forget(
+        _notify_reactivation_task(vault.id),
+        name=f"notify-reactivation-{vault.id}",
+    )
 
     return vault
 
@@ -406,8 +412,10 @@ async def _notify_reactivation_task(vault_id: int) -> None:
         from app.notifications.service import notify_vault_reactivated
         async with AsyncSessionLocal() as db:
             await notify_vault_reactivated(db, vault_id=vault_id)
+            await db.commit()
     except Exception:
-        pass
+        # El helper fire_and_forget se encarga del logging.
+        raise
 
 
 async def set_initial_balance(
