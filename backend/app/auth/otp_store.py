@@ -22,6 +22,7 @@ class OtpSession:
     user_id: int
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     resend_count: int = 0
+    verify_attempts: int = 0  # intentos fallidos de verificación del OTP
     last_resend_at: datetime | None = None
     locked_until: datetime | None = None
 
@@ -101,3 +102,19 @@ async def delete_otp_session(session_token: str) -> None:
     """Elimina la sesión OTP (post-verificación exitosa)."""
     async with _lock:
         _otp_sessions.pop(session_token, None)
+
+
+async def increment_verify_attempt(session_token: str) -> int:
+    """Incrementa contador de intentos fallidos de verificación de OTP y
+    devuelve el nuevo valor. Si supera el máximo, la sesión queda bloqueada."""
+    from datetime import timedelta
+    async with _lock:
+        session = _otp_sessions.get(session_token)
+        if not session:
+            return 0
+        session.verify_attempts += 1
+        if session.verify_attempts >= settings.otp_max_resends_per_session:
+            session.locked_until = datetime.now(timezone.utc) + timedelta(
+                minutes=settings.otp_lockout_minutes
+            )
+        return session.verify_attempts

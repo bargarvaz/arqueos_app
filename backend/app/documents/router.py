@@ -58,12 +58,20 @@ async def upload_certificate(
     ip_address = request.client.host if request and request.client else None
     user_agent = request.headers.get("User-Agent") if request else None
 
+    # Sin Content-Type explícito → rechazar (no asumir PDF). Defensa en
+    # profundidad junto con la validación de magic bytes en el service.
+    if not file.content_type:
+        from app.common.exceptions import ValidationAppError
+        raise ValidationAppError(
+            "El archivo debe declarar Content-Type: application/pdf."
+        )
+
     return await service.upload_certificate(
         db=db,
         header_id=header_id,
         file_content=content,
         original_filename=file.filename or "certificate.pdf",
-        content_type=file.content_type or "application/pdf",
+        content_type=file.content_type,
         user_id=current_user.id,
         ip_address=ip_address,
         user_agent=user_agent,

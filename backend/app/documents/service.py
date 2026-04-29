@@ -76,9 +76,17 @@ async def upload_certificate(
     - Máximo 10 MB
     - Máximo 10 certificados activos por arqueo
     """
-    # Validar tipo
+    # Validar tipo (header HTTP) — NO confiar en él como única validación
     if content_type not in ALLOWED_CONTENT_TYPES:
         raise ValidationAppError("Solo se permiten archivos PDF.")
+
+    # Validar magic bytes reales: todo PDF empieza con la firma `%PDF-`.
+    # Esto bloquea spoofing de Content-Type (HTML / EXE / ZIP-bomb declarados
+    # como `application/pdf`).
+    if len(file_content) < 5 or not file_content.lstrip()[:5] == b"%PDF-":
+        raise ValidationAppError(
+            "El archivo no es un PDF válido (firma inválida)."
+        )
 
     # Validar tamaño
     if len(file_content) > MAX_FILE_SIZE_BYTES:

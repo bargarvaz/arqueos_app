@@ -36,6 +36,16 @@ def configure_rate_limiting(app: FastAPI) -> None:
 def configure_security_headers(app: FastAPI) -> None:
     """Middleware que agrega headers de seguridad a todas las respuestas."""
 
+    # Content Security Policy: la API no sirve HTML, así que basta con
+    # bloquear cualquier recurso embebido. El frontend (nginx) define su
+    # propio CSP. `frame-ancestors 'none'` refuerza X-Frame-Options.
+    csp = (
+        "default-src 'none'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'none'; "
+        "form-action 'none'"
+    )
+
     @app.middleware("http")
     async def add_security_headers(request: Request, call_next) -> Response:
         response = await call_next(request)
@@ -44,6 +54,7 @@ def configure_security_headers(app: FastAPI) -> None:
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        response.headers["Content-Security-Policy"] = csp
         if settings.is_production:
             response.headers["Strict-Transport-Security"] = (
                 "max-age=31536000; includeSubDomains"

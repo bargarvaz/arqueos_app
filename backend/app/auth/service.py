@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Servicio de autenticación: login, OTP, refresh, logout, cambio de contraseña."""
 
+import hmac
 import secrets
 import logging
 from datetime import datetime, timedelta, timezone
@@ -39,6 +40,18 @@ logger = logging.getLogger(__name__)
 
 MAX_FAILED_ATTEMPTS = 5  # al 5° intento la cuenta queda bloqueada
 LOCKOUT_DURATION = timedelta(minutes=15)
+
+# Hash precomputado para verificación dummy cuando el email no existe.
+# Anula el timing attack de enumeración (bcrypt ~200ms para hashes reales,
+# ~0ms si no se ejecuta). Calculado en boot para que sea constante.
+_DUMMY_PASSWORD_HASH: str | None = None
+
+
+def _get_dummy_hash() -> str:
+    global _DUMMY_PASSWORD_HASH
+    if _DUMMY_PASSWORD_HASH is None:
+        _DUMMY_PASSWORD_HASH = hash_password("dummy-not-a-real-password")
+    return _DUMMY_PASSWORD_HASH
 
 
 async def _check_credentials(db: AsyncSession, email: str, password: str) -> User:
@@ -82,6 +95,10 @@ async def _check_credentials(db: AsyncSession, email: str, password: str) -> Use
     # ── A partir de aquí: credenciales inválidas ───────────────────────────
     if not user:
         # No existe (o está inactivo) → mensaje genérico, no incrementamos nada.
+        # Ejecutamos verify_password contra un hash dummy para que el tiempo
+        # total de respuesta sea similar al de un email real con pass mala.
+        # Sin esto, un atacante puede enumerar usuarios midiendo timing.
+        verify_password(password, _get_dummy_hash())
         raise UnauthorizedError("Credenciales incorrectas.")
 
     if is_admin:
@@ -336,7 +353,19 @@ async def login_external_step2(
         await otp_store.delete_otp_session(session_token)
         raise UnauthorizedError("El código OTP ha expirado. Solicita uno nuevo.")
 
-    if session.otp_code != otp_code:
+    # Comparación en tiempo constante (evita timing attack carácter a carácter)
+    if not hmac.compare_digest(str(session.otp_code), str(otp_code)):
+        attempts = await otp_store.increment_verify_attempt(session_token)
+        max_attempts = settings.otp_max_resends_per_session
+        if attempts >= max_attempts:
+            raise UnauthorizedError(
+                "Demasiados códigos incorrectos. Solicita uno nuevo más tarde."
+            )
+        remaining = max_attempts - attempts
+        if remaining == 1:
+            raise UnauthorizedError(
+                "Código OTP incorrecto. Te queda 1 intento."
+            )
         raise UnauthorizedError("Código OTP incorrecto.")
 
     # OTP válido — limpiar sesión temporal
