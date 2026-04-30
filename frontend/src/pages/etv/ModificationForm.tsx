@@ -483,25 +483,27 @@ export default function ModificationForm() {
         </select>
       </td>
 
-      {/* Entradas (sin flechitas) */}
+      {/* Entradas (number sin flechitas vía CSS) */}
       <td className="px-2 py-1.5">
         <input
-          type="text"
-          inputMode="decimal"
+          type="number"
+          step="0.01"
+          min="0"
           placeholder="0"
-          className="input w-24 text-right"
+          className="input w-24 text-right no-spinner"
           value={editData.entries ?? ''}
           onChange={(e) => setEditData((p) => ({ ...p, entries: e.target.value }))}
         />
       </td>
 
-      {/* Salidas (sin flechitas) */}
+      {/* Salidas (number sin flechitas) */}
       <td className="px-2 py-1.5">
         <input
-          type="text"
-          inputMode="decimal"
+          type="number"
+          step="0.01"
+          min="0"
           placeholder="0"
-          className="input w-24 text-right"
+          className="input w-24 text-right no-spinner"
           value={editData.withdrawals ?? ''}
           onChange={(e) => setEditData((p) => ({ ...p, withdrawals: e.target.value }))}
         />

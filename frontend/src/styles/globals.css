@@ -254,3 +254,16 @@
     @apply text-lg font-semibold text-text-primary tracking-tight;
   }
 }
+
+/* Inputs numéricos sin las flechitas (spinners). Mantiene type="number"
+   para que solo acepte dígitos / punto / signo, pero oculta los controles
+   up-down. Útil para entradas y salidas en arqueos. */
+.no-spinner::-webkit-inner-spin-button,
+.no-spinner::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.no-spinner {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

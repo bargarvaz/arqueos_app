@@ -55,7 +55,8 @@ def generate_records_xlsx(
     ws.append([])
 
     headers = [
-        "UID", "Fecha Arqueo", "Empresa", "Bóveda",
+        "UID", "Tipo Registro", "UID Origen",
+        "Fecha Arqueo", "Empresa", "Bóveda",
         "Comprobante", "Referencia", "Sucursal",
         "Tipo Movimiento", "Entradas", "Salidas",
         # Billetes
@@ -67,9 +68,27 @@ def generate_records_xlsx(
     ws.append(headers)
     _style_header_row(ws, 4, len(headers))
 
+    # Etiqueta legible para la columna de trazabilidad
+    def _record_kind(r: dict[str, Any]) -> str:
+        if not r.get("is_counterpart"):
+            return "Original"
+        ctype = r.get("counterpart_type")
+        if ctype == "cancellation":
+            return "Cancelación"
+        if ctype == "modification":
+            return "Modificación"
+        return "Contrapartida"
+
+    # Sombreado gris claro para filas de contrapartida (trazabilidad de
+    # cambios). Hace evidente al lector qué se canceló o se sustituyó.
+    counterpart_fill = PatternFill("solid", fgColor="F0E6E6")
+
     for row in rows:
+        excel_row_idx = ws.max_row + 1
         ws.append([
             row.get("record_uid", ""),
+            _record_kind(row),
+            row.get("original_record_uid", "") or "",
             row.get("arqueo_date", ""),
             row.get("company_name", ""),
             row.get("vault_code", ""),
@@ -100,9 +119,13 @@ def generate_records_xlsx(
             row.get("record_date", ""),
             row.get("header_status", ""),
         ])
+        if row.get("is_counterpart"):
+            for c in range(1, len(headers) + 1):
+                ws.cell(row=excel_row_idx, column=c).fill = counterpart_fill
 
-    # Formato numérico: Entradas, Salidas + todas las denominaciones (cols 9-26)
-    for row_cells in ws.iter_rows(min_row=5, min_col=9, max_col=26):
+    # Formato numérico para Entradas/Salidas y las 16 denominaciones
+    # (columnas K..AB → 11 a 28 en 1-indexed).
+    for row_cells in ws.iter_rows(min_row=5, min_col=11, max_col=28):
         for cell in row_cells:
             cell.number_format = '#,##0.00'
 

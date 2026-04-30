@@ -593,31 +593,33 @@ export default function ArqueoForm() {
                         />
                       </td>
 
-                      {/* Entradas (sin flechitas: text + inputMode decimal) */}
+                      {/* Entradas (number sin flechitas vía CSS .no-spinner) */}
                       <td className="px-2 py-1.5">
                         <input
-                          type="text"
-                          inputMode="decimal"
+                          type="number"
+                          step="0.01"
+                          min="0"
                           {...register(`records.${idx}.entries`)}
                           disabled={readOnly}
                           placeholder="0"
                           onClick={() => setExpandedRow(idx)}
-                          className={`input w-24 text-right ${
+                          className={`input w-24 text-right no-spinner ${
                             errors.records?.[idx]?.entries ? 'input-error' : ''
                           }`}
                         />
                       </td>
 
-                      {/* Salidas (sin flechitas) */}
+                      {/* Salidas (number sin flechitas) */}
                       <td className="px-2 py-1.5">
                         <input
-                          type="text"
-                          inputMode="decimal"
+                          type="number"
+                          step="0.01"
+                          min="0"
                           {...register(`records.${idx}.withdrawals`)}
                           disabled={readOnly}
                           placeholder="0"
                           onClick={() => setExpandedRow(idx)}
-                          className="input w-24 text-right"
+                          className="input w-24 text-right no-spinner"
                         />
                       </td>
 
