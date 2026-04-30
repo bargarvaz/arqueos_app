@@ -156,15 +156,17 @@ export default function ModificationForm() {
         }, {} as Record<string, string>),
       });
     } else if (type === 'add') {
+      // Defaults vacíos para que los placeholder "0" sean visibles. La
+      // coerción a "0" se hace en el submit (handleAdd / handleEdit).
       setEditData({
         voucher: '',
         reference: '',
         sucursal_id: '0',
         movement_type_id: '0',
-        entries: '0',
-        withdrawals: '0',
+        entries: '',
+        withdrawals: '',
         record_date: header?.arqueo_date || '',
-        ...DENOMINATIONS.reduce((a, d) => ({ ...a, [d.key]: '0' }), {}),
+        ...DENOMINATIONS.reduce((a, d) => ({ ...a, [d.key]: '' }), {}),
       });
     }
   };
@@ -196,6 +198,22 @@ export default function ModificationForm() {
     }
   };
 
+  // Coerciona campos numéricos vacíos a "0" antes de enviar al backend
+  // (entries, withdrawals y las 16 denominaciones). El backend exige Decimal.
+  const coerceEditData = (
+    data: Record<string, string>,
+  ): Record<string, string> => {
+    const numericKeys = ['entries', 'withdrawals', ...DENOMINATIONS.map((d) => d.key)];
+    const out = { ...data };
+    for (const k of numericKeys) {
+      const v = out[k];
+      if (v === undefined || v === null || (typeof v === 'string' && v.trim() === '')) {
+        out[k] = '0';
+      }
+    }
+    return out;
+  };
+
   const handleEdit = async () => {
     if (!action?.record || !reasonId) return;
     setProcessing(true);
@@ -204,7 +222,7 @@ export default function ModificationForm() {
       await modificationService.editRecord(action.record.record_uid, {
         reason_id: reasonId,
         reason_detail: reasonDetail || undefined,
-        new_data: editData,
+        new_data: coerceEditData(editData),
       });
       closeAction();
       await reloadHeader();
@@ -222,7 +240,7 @@ export default function ModificationForm() {
     setActionError('');
     try {
       await modificationService.addRecord(id, {
-        record: editData,
+        record: coerceEditData(editData),
         reason_id: reasonId,
         reason_detail: reasonDetail || undefined,
       });
@@ -312,8 +330,9 @@ export default function ModificationForm() {
                           type="number"
                           step={d.multiplier}
                           min="0"
+                          placeholder="0"
                           className="input w-24 text-right text-xs"
-                          value={editData[d.key] || '0'}
+                          value={editData[d.key] ?? ''}
                           onChange={(e) => setEditData((p) => ({ ...p, [d.key]: e.target.value }))}
                         />
                       </div>
@@ -326,8 +345,9 @@ export default function ModificationForm() {
                           type="number"
                           step={d.multiplier}
                           min="0"
+                          placeholder="0"
                           className="input w-24 text-right text-xs"
-                          value={editData[d.key] || '0'}
+                          value={editData[d.key] ?? ''}
                           onChange={(e) => setEditData((p) => ({ ...p, [d.key]: e.target.value }))}
                         />
                       </div>
@@ -463,26 +483,26 @@ export default function ModificationForm() {
         </select>
       </td>
 
-      {/* Entradas */}
+      {/* Entradas (sin flechitas) */}
       <td className="px-2 py-1.5">
         <input
-          type="number"
-          step="0.01"
-          min="0"
+          type="text"
+          inputMode="decimal"
+          placeholder="0"
           className="input w-24 text-right"
-          value={editData.entries || '0'}
+          value={editData.entries ?? ''}
           onChange={(e) => setEditData((p) => ({ ...p, entries: e.target.value }))}
         />
       </td>
 
-      {/* Salidas */}
+      {/* Salidas (sin flechitas) */}
       <td className="px-2 py-1.5">
         <input
-          type="number"
-          step="0.01"
-          min="0"
+          type="text"
+          inputMode="decimal"
+          placeholder="0"
           className="input w-24 text-right"
-          value={editData.withdrawals || '0'}
+          value={editData.withdrawals ?? ''}
           onChange={(e) => setEditData((p) => ({ ...p, withdrawals: e.target.value }))}
         />
       </td>

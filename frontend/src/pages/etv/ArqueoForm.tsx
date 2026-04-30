@@ -26,24 +26,24 @@ const recordSchema = z
     reference: z.string().max(100).default(''),
     sucursal_id: z.number().default(0),
     movement_type_id: z.number().default(0),
-    entries: z.string().default('0'),
-    withdrawals: z.string().default('0'),
-    bill_1000: z.string().default('0'),
-    bill_500: z.string().default('0'),
-    bill_200: z.string().default('0'),
-    bill_100: z.string().default('0'),
-    bill_50: z.string().default('0'),
-    bill_20: z.string().default('0'),
-    coin_100: z.string().default('0'),
-    coin_50: z.string().default('0'),
-    coin_20: z.string().default('0'),
-    coin_10: z.string().default('0'),
-    coin_5: z.string().default('0'),
-    coin_2: z.string().default('0'),
-    coin_1: z.string().default('0'),
-    coin_050: z.string().default('0'),
-    coin_020: z.string().default('0'),
-    coin_010: z.string().default('0'),
+    entries: z.string().default(''),
+    withdrawals: z.string().default(''),
+    bill_1000: z.string().default(''),
+    bill_500: z.string().default(''),
+    bill_200: z.string().default(''),
+    bill_100: z.string().default(''),
+    bill_50: z.string().default(''),
+    bill_20: z.string().default(''),
+    coin_100: z.string().default(''),
+    coin_50: z.string().default(''),
+    coin_20: z.string().default(''),
+    coin_10: z.string().default(''),
+    coin_5: z.string().default(''),
+    coin_2: z.string().default(''),
+    coin_1: z.string().default(''),
+    coin_050: z.string().default(''),
+    coin_020: z.string().default(''),
+    coin_010: z.string().default(''),
     record_date: z.string().default(''),
   })
   .refine(
@@ -72,14 +72,14 @@ function emptyRecord(date: string): RecordValues {
     reference: '',
     sucursal_id: 0,
     movement_type_id: 0,
-    entries: '0',
-    withdrawals: '0',
+    entries: '',
+    withdrawals: '',
     record_date: date,
     record_uid: undefined,
   } as RecordValues;
 
   for (const d of DENOMINATIONS) {
-    (base as unknown as Record<string, string>)[d.key] = '0';
+    (base as unknown as Record<string, string>)[d.key] = '';
   }
   return base;
 }
@@ -593,15 +593,14 @@ export default function ArqueoForm() {
                         />
                       </td>
 
-                      {/* Entradas */}
+                      {/* Entradas (sin flechitas: text + inputMode decimal) */}
                       <td className="px-2 py-1.5">
                         <input
-                          type="number"
-                          step="0.01"
-                          min="0"
+                          type="text"
+                          inputMode="decimal"
                           {...register(`records.${idx}.entries`)}
                           disabled={readOnly}
-                          placeholder=""
+                          placeholder="0"
                           onClick={() => setExpandedRow(idx)}
                           className={`input w-24 text-right ${
                             errors.records?.[idx]?.entries ? 'input-error' : ''
@@ -609,15 +608,14 @@ export default function ArqueoForm() {
                         />
                       </td>
 
-                      {/* Salidas */}
+                      {/* Salidas (sin flechitas) */}
                       <td className="px-2 py-1.5">
                         <input
-                          type="number"
-                          step="0.01"
-                          min="0"
+                          type="text"
+                          inputMode="decimal"
                           {...register(`records.${idx}.withdrawals`)}
                           disabled={readOnly}
-                          placeholder=""
+                          placeholder="0"
                           onClick={() => setExpandedRow(idx)}
                           className="input w-24 text-right"
                         />
@@ -676,6 +674,7 @@ export default function ArqueoForm() {
                                   min="0"
                                   {...register(`records.${idx}.${d.key}` as Parameters<typeof register>[0])}
                                   disabled={readOnly}
+                                  placeholder="0"
                                   className="input w-24 text-right text-xs"
                                 />
                               </div>
@@ -695,6 +694,7 @@ export default function ArqueoForm() {
                                   min="0"
                                   {...register(`records.${idx}.${d.key}` as Parameters<typeof register>[0])}
                                   disabled={readOnly}
+                                  placeholder="0"
                                   className="input w-24 text-right text-xs"
                                 />
                               </div>
