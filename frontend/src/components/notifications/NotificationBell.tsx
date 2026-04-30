@@ -4,15 +4,29 @@ import { useNavigate } from 'react-router-dom';
 import { Bell, X, Trash2 } from 'lucide-react';
 import notificationService, { Notification } from '@/services/notificationService';
 import { POLLING_INTERVAL_MS, ROUTES } from '@/utils/constants';
+import { useAuthStore } from '@/store/authStore';
 
-function getNotificationRoute(notif: Notification): string | null {
+function getNotificationRoute(
+  notif: Notification,
+  role: string | undefined,
+): string | null {
+  const isEtv = role === 'etv';
   if (notif.entity_type === 'arqueo_header' && notif.entity_id) {
+    // ETV: ir al formulario de modificación del arqueo (su flujo natural).
+    // Internos: explorador con drill-down al header.
+    if (isEtv) {
+      return `${ROUTES.ETV_MODIFICATIONS}/${notif.entity_id}`;
+    }
     return `${ROUTES.ARQUEO_EXPLORER}?header=${notif.entity_id}`;
   }
   if (notif.entity_type === 'error_report' && notif.entity_id) {
+    // ETV ve sus reportes en su propia ruta; al hacer clic se queda en su
+    // listado, donde puede responder. Los internos abren el detalle.
+    if (isEtv) return ROUTES.ETV_ERROR_REPORTS;
     return `${ROUTES.ERROR_REPORTS}/${notif.entity_id}`;
   }
   if (notif.entity_type === 'vault' && notif.entity_id) {
+    if (isEtv) return ROUTES.ETV_VAULTS;
     return `${ROUTES.VAULT_DIRECTORY}?vault=${notif.entity_id}`;
   }
   return null;
@@ -30,6 +44,7 @@ function timeAgo(dateStr: string): string {
 
 export default function NotificationBell() {
   const navigate = useNavigate();
+  const userRole = useAuthStore((s) => s.user?.role);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [open, setOpen] = useState(false);
@@ -85,7 +100,7 @@ export default function NotificationBell() {
         prev.map((n) => (n.id === notif.id ? { ...n, is_read: true } : n))
       );
     }
-    const route = getNotificationRoute(notif);
+    const route = getNotificationRoute(notif, userRole);
     if (route) {
       setOpen(false);
       navigate(route);

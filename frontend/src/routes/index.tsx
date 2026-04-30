@@ -1,9 +1,20 @@
 // Router principal con rutas protegidas por rol
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 
 import { useAuthStore } from '@/store/authStore';
 import { ROUTES } from '@/utils/constants';
+
+/** Devuelve la ruta de login que corresponde al contexto actual de la URL.
+ * Si el usuario estaba navegando dentro del portal ETV (`/etv/*` o
+ * `/external/*`), debe regresar al login externo; en caso contrario al
+ * login interno. */
+function loginPathForContext(pathname: string): string {
+  if (pathname.startsWith('/etv') || pathname.startsWith('/external')) {
+    return ROUTES.EXTERNAL_LOGIN;
+  }
+  return ROUTES.INTERNAL_LOGIN;
+}
 
 // Páginas de auth (no lazy — se cargan inmediatamente)
 import InternalLogin from '@/pages/auth/InternalLogin';
@@ -46,14 +57,20 @@ const Lazy = ({ children }: { children: React.ReactNode }) => (
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
-  if (!isAuthenticated) return <Navigate to={ROUTES.INTERNAL_LOGIN} replace />;
+  const location = useLocation();
+  if (!isAuthenticated) {
+    return <Navigate to={loginPathForContext(location.pathname)} replace />;
+  }
   return <>{children}</>;
 }
 
 function RequireRole({ roles, children }: { roles: string[]; children: React.ReactNode }) {
   const { user } = useAuthStore();
+  const location = useLocation();
   if (!user || !roles.includes(user.role)) {
-    return <Navigate to={ROUTES.INTERNAL_LOGIN} replace />;
+    // Si el usuario es ETV pero está en una ruta interna (o viceversa),
+    // mandarlo al login que le corresponde por contexto de URL.
+    return <Navigate to={loginPathForContext(location.pathname)} replace />;
   }
   return <>{children}</>;
 }

@@ -1,5 +1,6 @@
 // Modal para reportar un error desde el detalle de un arqueo (Operations / Admin)
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, AlertTriangle, Send } from 'lucide-react';
 
 import errorReportService from '@/services/errorReportService';
@@ -125,9 +126,12 @@ export default function ReportFromArqueoModal({
     description.trim().length >= 10 &&
     !submitting;
 
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg w-full max-w-xl shadow-xl max-h-[90vh] flex flex-col">
+  // Portal a document.body para escapar cualquier containing block creado
+  // por transforms / filters / backdrop-filters de los layouts. Garantiza
+  // que el overlay cubra el viewport completo (incluido el header).
+  return createPortal(
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] p-4">
+      <div className="bg-background rounded-xl w-full max-w-xl shadow-elevated max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between p-5 border-b border-border flex-shrink-0">
           <h2 className="text-base font-semibold text-text-primary flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-warning" />
@@ -277,6 +281,7 @@ export default function ReportFromArqueoModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

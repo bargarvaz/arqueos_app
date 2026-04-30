@@ -79,6 +79,20 @@ api.interceptors.response.use(
         clearAuthSession();
         return Promise.reject(error);
       }
+      // Endpoints de login / OTP / forgot-password: el 401 indica
+      // credenciales inválidas, NO sesión expirada. No tiene sentido
+      // intentar refresh ni redirigir; simplemente propagamos el error
+      // para que el formulario lo muestre.
+      const isLoginEndpoint =
+        url.includes('/auth/internal/login') ||
+        url.includes('/auth/external/login') ||
+        url.includes('/auth/external/verify-otp') ||
+        url.includes('/auth/external/resend-otp') ||
+        url.includes('/auth/forgot-password') ||
+        url.includes('/auth/change-password');
+      if (isLoginEndpoint) {
+        return Promise.reject(error);
+      }
 
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
@@ -111,10 +125,14 @@ api.interceptors.response.use(
       } catch (refreshError) {
         processQueue(refreshError, null);
         clearAuthSession();
-        // Redirigir al login según el path actual
+        // Redirigir al login según el path actual. Las rutas /etv/* (post-login
+        // ETV) y /external/* (login/OTP ETV) ambas son "contexto ETV".
         const path = window.location.pathname;
-        const loginPath = path.startsWith('/etv') ? '/external/login' : '/internal/login';
-        window.location.href = loginPath;
+        const isEtvContext =
+          path.startsWith('/etv') || path.startsWith('/external');
+        window.location.href = isEtvContext
+          ? '/external/login'
+          : '/internal/login';
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

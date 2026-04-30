@@ -1,6 +1,7 @@
 // Reportes de error — vista interna (admin / operations)
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, CheckCircle, MessageSquare, ChevronDown, ChevronRight, User as UserIcon, Vault as VaultIcon, Calendar } from 'lucide-react';
+import { Plus, CheckCircle, MessageSquare, ChevronDown, ChevronRight, User as UserIcon, Vault as VaultIcon, Calendar, ExternalLink } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -11,6 +12,7 @@ import catalogService, { type ErrorType } from '@/services/catalogService';
 import { formatDatetime } from '@/utils/formatters';
 import { getErrorMessage } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
+import { ROUTES } from '@/utils/constants';
 
 const createSchema = z.object({
   assigned_to: z.number({ invalid_type_error: 'Selecciona un ETV.' }).min(1, 'Requerido.'),
@@ -36,6 +38,7 @@ const STATUS_BADGE: Record<string, string> = {
 };
 
 export default function ErrorReports() {
+  const navigate = useNavigate();
   const { user } = useAuthStore();
   const canCreate = user?.role === 'admin' || user?.role === 'operations';
 
@@ -284,17 +287,34 @@ export default function ErrorReports() {
                     )}
 
                     {/* Acciones */}
-                    {canCreate && r.status !== 'resolved' && r.status !== 'closed' && r.response && (
-                      <div className="flex justify-end">
+                    <div className="flex justify-end gap-2 flex-wrap">
+                      {r.arqueo_header_id && r.vault_id && (
                         <button
-                          onClick={() => handleResolve(r)}
+                          onClick={() =>
+                            navigate(
+                              `${ROUTES.ARQUEO_EXPLORER}?vault=${r.vault_id}`,
+                            )
+                          }
                           className="btn btn-outline text-xs flex items-center gap-1"
+                          title="Abrir el arqueo en el explorador"
                         >
-                          <CheckCircle className="w-3.5 h-3.5" />
-                          Marcar como resuelto
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          Ir al arqueo
                         </button>
-                      </div>
-                    )}
+                      )}
+                      {canCreate &&
+                        r.status !== 'resolved' &&
+                        r.status !== 'closed' &&
+                        r.response && (
+                          <button
+                            onClick={() => handleResolve(r)}
+                            className="btn btn-outline text-xs flex items-center gap-1"
+                          >
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            Marcar como resuelto
+                          </button>
+                        )}
+                    </div>
                   </div>
                 )}
               </div>

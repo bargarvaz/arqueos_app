@@ -1,13 +1,15 @@
 // Reportes de error — vista ETV (solo responder)
 import { useState, useEffect, useCallback } from 'react';
-import { Send, ChevronDown, ChevronRight, Vault as VaultIcon, Calendar, User as UserIcon } from 'lucide-react';
+import { Send, ChevronDown, ChevronRight, Vault as VaultIcon, Calendar, User as UserIcon, ExternalLink } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useNavigate } from 'react-router-dom';
 
 import errorReportService, { type ErrorReport } from '@/services/errorReportService';
 import { formatDatetime } from '@/utils/formatters';
 import { getErrorMessage } from '@/services/api';
+import { ROUTES } from '@/utils/constants';
 
 const respondSchema = z.object({
   response: z.string().min(5, 'Mínimo 5 caracteres.').max(2000),
@@ -84,6 +86,7 @@ function RespondModal({ report, onClose, onSent }: { report: ErrorReport; onClos
 }
 
 export default function EtvErrorReports() {
+  const navigate = useNavigate();
   const [reports, setReports] = useState<ErrorReport[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -268,8 +271,22 @@ export default function EtvErrorReports() {
                       </div>
                     )}
 
-                    {canRespond(r) && !r.response && (
-                      <div className="flex justify-end">
+                    <div className="flex justify-end gap-2 flex-wrap">
+                      {r.arqueo_header_id && (
+                        <button
+                          onClick={() =>
+                            navigate(
+                              `${ROUTES.ETV_MODIFICATIONS}/${r.arqueo_header_id}`,
+                            )
+                          }
+                          className="btn btn-outline text-xs flex items-center gap-1"
+                          title="Ir al arqueo para corregir o aplicar la modificación"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          Ir al arqueo
+                        </button>
+                      )}
+                      {canRespond(r) && !r.response && (
                         <button
                           onClick={() => setRespondingTo(r)}
                           className="btn btn-primary text-xs flex items-center gap-1"
@@ -277,8 +294,8 @@ export default function EtvErrorReports() {
                           <Send className="w-3.5 h-3.5" />
                           Responder reporte
                         </button>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

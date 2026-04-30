@@ -253,14 +253,33 @@ export default function ArqueoForm() {
     setPublishing(true);
     setServerError('');
 
+    // Helper: cualquier campo numérico vacío o blanco se manda como "0"
+    // (el backend exige Decimal válido). Aplica a entries, withdrawals y a
+    // las 16 denominaciones.
+    const numericKeys = [
+      'entries',
+      'withdrawals',
+      ...DENOMINATIONS.map((d) => d.key),
+    ] as const;
+    const coerceNumeric = (rec: Record<string, unknown>): Record<string, unknown> => {
+      const out = { ...rec };
+      for (const k of numericKeys) {
+        const v = out[k];
+        if (v === undefined || v === null || (typeof v === 'string' && v.trim() === '')) {
+          out[k] = '0';
+        }
+      }
+      return out;
+    };
+
     try {
       await arqueoService.publishArqueo(state.vault.id, state.arqueo_date, {
-        records: nonEmpty.map((r) => ({
-          ...r,
-          record_date: state.arqueo_date,
-          entries: r.entries || '0',
-          withdrawals: r.withdrawals || '0',
-        })) as RecordCreatePayload[],
+        records: nonEmpty.map((r) =>
+          coerceNumeric({
+            ...r,
+            record_date: state.arqueo_date,
+          }),
+        ) as unknown as RecordCreatePayload[],
         updated_at: header.updated_at,
       });
       clearDraft();
