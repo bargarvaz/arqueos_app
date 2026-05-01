@@ -97,6 +97,86 @@ def _coerce_date(value: Any, fallback: date) -> date:
         return fallback
 
 
+async def _validate_cascade_intraday(
+    db: AsyncSession,
+    vault_id: int,
+    from_date: date,
+) -> None:
+    """
+    Recorre todos los headers publicados/locked de la bóveda con
+    `arqueo_date > from_date` y simula intra-day por cada uno.
+
+    Se ejecuta DESPUÉS de aplicar la modificación (con flush hecho) para
+    detectar si los días posteriores quedaron con denominaciones negativas
+    como consecuencia. Si se encuentra algún día roto, lanza
+    `BusinessRuleError` con el día y la denominación; el caller debe estar
+    aún DENTRO de la transacción (sin commit) para que el rollback descarte
+    todos los cambios.
+    """
+    headers_result = await db.execute(
+        select(ArqueoHeader)
+        .where(
+            ArqueoHeader.vault_id == vault_id,
+            ArqueoHeader.arqueo_date > from_date,
+            ArqueoHeader.status != ArqueoStatus.draft,
+        )
+        .order_by(ArqueoHeader.arqueo_date)
+    )
+    posterior_headers = list(headers_result.scalars().all())
+    if not posterior_headers:
+        return
+
+    for header in posterior_headers:
+        inventory = await get_denomination_inventory(
+            db, vault_id, header.arqueo_date,
+        )
+        # Bóveda sin migrar (denominaciones iniciales en None) → relajar.
+        if any(v is None for v in inventory.values()):
+            continue
+
+        # Query fresca de records — evita cache stale del relationship.
+        recs_result = await db.execute(
+            select(ArqueoRecord)
+            .where(
+                ArqueoRecord.arqueo_header_id == header.id,
+                ArqueoRecord.is_active == True,
+                ArqueoRecord.is_counterpart == False,
+            )
+            .order_by(ArqueoRecord.id)
+        )
+        records = list(recs_result.scalars().all())
+        if not records:
+            continue
+
+        records_data = []
+        for r in records:
+            d: dict[str, Any] = {
+                "entries": Decimal(str(r.entries or 0)),
+                "withdrawals": Decimal(str(r.withdrawals or 0)),
+            }
+            for f in RECORD_DENOMINATION_FIELDS:
+                d[f] = Decimal(str(getattr(r, f) or 0))
+            records_data.append(d)
+
+        issues = validate_denomination_balance(
+            inventory, records_data, intraday=True,
+        )
+        if issues:
+            row = issues[0].get("row")
+            details = ", ".join(
+                f"{i['denomination']} (disponible ${i['available']}, faltan ${i['deficit']})"
+                for i in issues
+            )
+            prefix = f"fila {row}: " if row else ""
+            raise BusinessRuleError(
+                f"Esta modificación rompería el inventario el "
+                f"{header.arqueo_date.strftime('%d %b %Y')} — "
+                f"{prefix}{details}. Corrige primero ese día (o los "
+                f"siguientes en orden cronológico) antes de aplicar este "
+                f"cambio."
+            )
+
+
 async def _validate_inventory_after_change(
     db: AsyncSession,
     vault_id: int,
@@ -333,10 +413,17 @@ async def cancel_record(
         user_agent=user_agent,
     )
 
+    # Validación cascada: tras flush, simulamos intra-day en cada día
+    # posterior. Si esta cancelación dejara denominaciones negativas en
+    # algún día siguiente, se levanta BusinessRuleError y la transacción
+    # se descarta (no llega al commit).
+    await db.flush()
+    await _validate_cascade_intraday(db, header.vault_id, header.arqueo_date)
+
     await db.commit()
     await db.refresh(counterpart)
 
-    # Cascada asíncrona
+    # Cascada asíncrona — solo recalcula totales, ya validado arriba.
     fire_and_forget(
         _cascade_task(header.vault_id, header.arqueo_date),
         name=f"cascade-modification-{header.vault_id}",
@@ -479,6 +566,10 @@ async def edit_record(
         user_agent=user_agent,
     )
 
+    # Validación cascada (ver _validate_cascade_intraday).
+    await db.flush()
+    await _validate_cascade_intraday(db, header.vault_id, header.arqueo_date)
+
     await db.commit()
     await db.refresh(corrected)
 
@@ -586,6 +677,10 @@ async def add_record(
         ip_address=ip_address,
         user_agent=user_agent,
     )
+
+    # Validación cascada (ver _validate_cascade_intraday).
+    await db.flush()
+    await _validate_cascade_intraday(db, header.vault_id, header.arqueo_date)
 
     await db.commit()
     await db.refresh(new_record)
