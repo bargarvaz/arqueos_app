@@ -238,9 +238,22 @@ async def update_vault_denominations(
     old["initial_balance"] = vault.initial_balance
     old["balance_reset_at"] = vault.balance_reset_at
 
+    # Determinar si las denominaciones realmente cambian. Si el cliente envió
+    # las mismas cantidades que ya tiene la bóveda, no hay reset (sería ruido
+    # marcar balance_reset_at, notificar y truncar la historia sin razón).
+    incoming = {
+        f: Decimal(str(denominations.get(f, getattr(vault, f)) or 0))
+        for f in _DENOMINATION_FIELDS
+    }
+    current = {f: Decimal(str(getattr(vault, f) or 0)) for f in _DENOMINATION_FIELDS}
+    has_changes = any(incoming[f] != current[f] for f in _DENOMINATION_FIELDS)
+    if not has_changes:
+        # No-op silencioso: el caller suele venir de un PATCH genérico que
+        # incluye initial_denominations aunque solo haya tocado nombre/ETV.
+        return vault
+
     for f in _DENOMINATION_FIELDS:
-        if f in denominations:
-            setattr(vault, f, Decimal(str(denominations[f] or 0)))
+        setattr(vault, f, incoming[f])
     vault.initial_balance = sum(
         (getattr(vault, f) for f in _DENOMINATION_FIELDS), start=Decimal("0")
     )

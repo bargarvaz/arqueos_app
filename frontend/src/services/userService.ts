@@ -58,6 +58,25 @@ export interface UpdateUserPayload {
   etv_subrole?: EtvSubrole | null;
 }
 
+export interface VaultAssignmentUser {
+  id: number;
+  full_name: string;
+  email: string;
+  role: string;
+  etv_subrole: 'gerente' | 'tesorero' | null;
+  is_active: boolean;
+}
+
+export interface VaultAssignmentRow {
+  vault_id: number;
+  vault_code: string;
+  vault_name: string;
+  vault_is_active: boolean;
+  manager: VaultAssignmentUser | null;
+  treasurer: VaultAssignmentUser | null;
+  users: VaultAssignmentUser[];
+}
+
 export interface PagedUsers {
   items: UserResponse[];
   total: number;
@@ -93,6 +112,13 @@ const userService = {
 
   updateUser: async (userId: number, payload: UpdateUserPayload): Promise<UserResponse> => {
     const { data } = await api.patch<UserResponse>(`/users/${userId}`, payload);
+    return data;
+  },
+
+  /** Lista admin: una fila por bóveda con sus usuarios asignados
+   * (manager, tesorero y todos los ETVs con UserVaultAssignment activa). */
+  getVaultAssignments: async (): Promise<VaultAssignmentRow[]> => {
+    const { data } = await api.get<VaultAssignmentRow[]>('/users/vault-assignments');
     return data;
   },
 

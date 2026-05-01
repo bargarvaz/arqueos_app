@@ -1,7 +1,7 @@
 // Gestión de usuarios — solo Admin
 import { useState, useEffect, useCallback } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { UserPlus, KeyRound, Vault, Edit2, Copy, Check, Eye, EyeOff } from 'lucide-react';
+import { UserPlus, KeyRound, Vault, Edit2, Copy, Check, Eye, EyeOff, Users as UsersIcon } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -18,6 +18,7 @@ import { formatUserRole } from '@/utils/formatters';
 import { getErrorMessage } from '@/services/api';
 import BulkImportModal from '@/components/bulk/BulkImportModal';
 import { Upload } from 'lucide-react';
+import VaultAssignmentsModal from '@/components/users/VaultAssignmentsModal';
 
 const createSchema = z
   .object({
@@ -100,6 +101,7 @@ export default function UserManagement() {
     useState<'created' | 'reset'>('created');
   const [createVaults, setCreateVaults] = useState<number[]>([]);
   const [showBulkImport, setShowBulkImport] = useState(false);
+  const [showVaultAssignments, setShowVaultAssignments] = useState(false);
 
   // Auto-copia la contraseña temporal al portapapeles cuando se genera
   useEffect(() => {
@@ -480,6 +482,14 @@ export default function UserManagement() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-semibold text-text-primary">Gestión de Usuarios</h1>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowVaultAssignments(true)}
+            className="btn-outline flex items-center gap-2"
+            title="Ver qué usuarios tienen acceso a cada bóveda"
+          >
+            <UsersIcon className="w-4 h-4" />
+            Asignaciones por bóveda
+          </button>
           <button
             onClick={() => setShowBulkImport(true)}
             className="btn-outline flex items-center gap-2"
@@ -1055,6 +1065,11 @@ export default function UserManagement() {
           onSuccess={load}
         />
       )}
+
+      <VaultAssignmentsModal
+        open={showVaultAssignments}
+        onClose={() => setShowVaultAssignments(false)}
+      />
     </div>
   );
 }

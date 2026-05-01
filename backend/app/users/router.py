@@ -254,6 +254,14 @@ async def get_user_counts(
     return await user_service.count_users_by_role(db, is_active=is_active)
 
 
+@router.get("/vault-assignments")
+async def get_vault_assignments(db: DbSession, _=AdminUser):
+    """Vista admin: una fila por bóveda con su gerente, tesorero y los
+    ETVs con UserVaultAssignment activa. Útil para auditar quién tiene
+    acceso a cada bóveda sin entrar usuario por usuario."""
+    return await user_service.list_vault_assignments(db)
+
+
 # ─── Rutas con /{user_id} AL FINAL para no capturar rutas específicas ─────────
 
 @router.get("/{user_id}", response_model=UserDetailResponse)

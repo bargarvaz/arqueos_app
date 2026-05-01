@@ -40,6 +40,7 @@ export interface Vault extends InitialDenominations {
   is_active: boolean;
   deactivated_at: string | null;
   reactivated_at: string | null;
+  balance_reset_at: string | null;
 }
 
 export interface DenominationInventory {

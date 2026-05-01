@@ -14,6 +14,79 @@ from app.common.pagination import PaginationParams
 logger = logging.getLogger(__name__)
 
 
+async def list_vault_assignments(db: AsyncSession) -> list[dict]:
+    """Lista cada bóveda activa con sus usuarios asignados (manager,
+    tesorero y cualquier ETV con UserVaultAssignment activa). Devuelve
+    una estructura denormalizada lista para mostrar en la UI:
+    [{vault_id, vault_code, vault_name, is_active, manager, treasurer,
+      users: [{id, full_name, email, etv_subrole, role}]}]
+    """
+    from app.vaults.models import Vault
+
+    vaults_result = await db.execute(
+        select(Vault).order_by(Vault.vault_code)
+    )
+    vaults = list(vaults_result.scalars().all())
+    if not vaults:
+        return []
+
+    vault_ids = [v.id for v in vaults]
+
+    # Una sola query: para cada vault sus assignments activas con datos del user.
+    rows_result = await db.execute(
+        select(UserVaultAssignment.vault_id, User)
+        .join(User, User.id == UserVaultAssignment.user_id)
+        .where(
+            UserVaultAssignment.vault_id.in_(vault_ids),
+            UserVaultAssignment.is_active == True,
+        )
+        .order_by(User.full_name)
+    )
+    assignments_by_vault: dict[int, list[User]] = {}
+    for vid, u in rows_result.all():
+        assignments_by_vault.setdefault(vid, []).append(u)
+
+    # Pre-cargar managers/treasurers (un único query agrupado).
+    holder_ids = {v.manager_id for v in vaults if v.manager_id} | {
+        v.treasurer_id for v in vaults if v.treasurer_id
+    }
+    holders: dict[int, User] = {}
+    if holder_ids:
+        h_result = await db.execute(select(User).where(User.id.in_(holder_ids)))
+        for u in h_result.scalars().all():
+            holders[u.id] = u
+
+    def _user_dict(u: User | None) -> dict | None:
+        if u is None:
+            return None
+        return {
+            "id": u.id,
+            "full_name": u.full_name,
+            "email": u.email,
+            "role": u.role.value if hasattr(u.role, "value") else str(u.role),
+            "etv_subrole": (
+                u.etv_subrole.value
+                if u.etv_subrole and hasattr(u.etv_subrole, "value")
+                else u.etv_subrole
+            ),
+            "is_active": u.is_active,
+        }
+
+    out: list[dict] = []
+    for v in vaults:
+        users = assignments_by_vault.get(v.id, [])
+        out.append({
+            "vault_id": v.id,
+            "vault_code": v.vault_code,
+            "vault_name": v.vault_name,
+            "vault_is_active": v.is_active,
+            "manager": _user_dict(holders.get(v.manager_id)) if v.manager_id else None,
+            "treasurer": _user_dict(holders.get(v.treasurer_id)) if v.treasurer_id else None,
+            "users": [_user_dict(u) for u in users],
+        })
+    return out
+
+
 async def count_users_by_role(
     db: AsyncSession, *, is_active: bool | None = None
 ) -> dict[str, int]:

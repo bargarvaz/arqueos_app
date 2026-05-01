@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Schemas Pydantic de bóvedas, sucursales y personal."""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from pydantic import BaseModel, Field, model_validator
 
@@ -140,6 +140,7 @@ class VaultResponse(BaseModel):
     is_active: bool
     deactivated_at: datetime | None
     reactivated_at: datetime | None
+    balance_reset_at: date | None = None
 
     @property
     def needs_denomination_migration(self) -> bool:

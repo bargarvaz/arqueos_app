@@ -70,6 +70,11 @@ export default function VaultDirectory() {
   const [editDenoms, setEditDenoms] = useState<Record<string, string>>(
     emptyDenominations('initial_'),
   );
+  // Snapshot de las denominaciones al abrir el modal para detectar cambios
+  // reales y avisar al usuario que tocarlas reinicia la historia.
+  const [editOriginalDenoms, setEditOriginalDenoms] = useState<Record<string, string>>(
+    emptyDenominations('initial_'),
+  );
   const [reactivateTarget, setReactivateTarget] = useState<Vault | null>(null);
   const [reactivateDenoms, setReactivateDenoms] = useState<Record<string, string>>(
     emptyDenominations('initial_'),
@@ -175,13 +180,15 @@ export default function VaultDirectory() {
   const openEdit = (vault: Vault) => {
     setEditTarget(vault);
     setEditError('');
-    // Cargar denominaciones existentes
+    // Cargar denominaciones existentes y guardar snapshot para detectar
+    // cambios reales al guardar.
     const denoms: Record<string, string> = {};
     DENOMINATIONS.forEach((d) => {
       const fld = `initial_${d.key}` as keyof Vault;
       denoms[`initial_${d.key}`] = String(vault[fld] ?? '0');
     });
     setEditDenoms(denoms);
+    setEditOriginalDenoms({ ...denoms });
     editForm.reset({
       vault_name: vault.vault_name,
       company_id: vault.company_id,
@@ -191,9 +198,31 @@ export default function VaultDirectory() {
     });
   };
 
+  // Compara dos sets de denominaciones por valor numérico (ignora "0" vs
+  // "0.00" vs "" — todos cuentan como 0).
+  const denomsChanged = (a: Record<string, string>, b: Record<string, string>) =>
+    DENOMINATIONS.some((d) => {
+      const k = `initial_${d.key}`;
+      return (parseFloat(a[k] || '0') || 0) !== (parseFloat(b[k] || '0') || 0);
+    });
+
   const onEditSubmit = async (data: EditForm) => {
     if (!editTarget) return;
     setEditError('');
+
+    const willResetBalance = denomsChanged(editDenoms, editOriginalDenoms);
+    if (willResetBalance) {
+      const ok = window.confirm(
+        '⚠ Vas a reescribir las denominaciones iniciales de la bóveda.\n\n' +
+        'Esto se considera un RESET: la historia previa de arqueos deja ' +
+        'de contar para los cálculos de inventario y saldos a partir de ' +
+        'hoy. Si solo necesitas corregir un movimiento puntual, hazlo ' +
+        'desde el módulo de modificaciones del arqueo correspondiente.\n\n' +
+        '¿Continúas con el reset?'
+      );
+      if (!ok) return;
+    }
+
     try {
       await vaultService.updateVault(editTarget.id, {
         vault_name: data.vault_name,
@@ -201,7 +230,10 @@ export default function VaultDirectory() {
         empresa_id: data.empresa_id ?? null,
         manager_id: data.manager_id ?? null,
         treasurer_id: data.treasurer_id ?? null,
-        initial_denominations: editDenoms,
+        // Solo enviar denominaciones si realmente cambiaron — evita
+        // que el backend reciba payload innecesario aunque ya está protegido
+        // contra no-cambios.
+        ...(willResetBalance ? { initial_denominations: editDenoms } : {}),
       });
       setEditTarget(null);
       await load();
