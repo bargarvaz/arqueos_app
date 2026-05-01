@@ -63,6 +63,50 @@ async def _get_or_create_branch(db: AsyncSession, name: str) -> Branch:
     return branch
 
 
+async def _ensure_vault_assignment(
+    db: AsyncSession,
+    user_id: int,
+    vault_id: int,
+) -> None:
+    """Garantiza que `user_id` tenga una UserVaultAssignment activa con
+    `vault_id`. Si existe inactiva la reactiva; si no existe la crea.
+
+    Valida que el usuario sea activo y de rol ETV; cualquier otra cosa
+    levanta BusinessRuleError. Idempotente: llamadas repetidas no duplican.
+
+    Operación aditiva: nunca desactiva; revocar permisos sigue siendo
+    competencia explícita del módulo de usuarios.
+    """
+    from app.users.models import User, UserVaultAssignment, UserRole
+    from app.common.exceptions import BusinessRuleError
+
+    user = await db.get(User, user_id)
+    if user is None or not user.is_active:
+        raise BusinessRuleError(
+            f"El usuario {user_id} no existe o está inactivo."
+        )
+    if user.role != UserRole.etv:
+        raise BusinessRuleError(
+            f"El usuario {user.email} no es ETV; "
+            "solo usuarios ETV pueden ser gerente o tesorero de una bóveda."
+        )
+
+    result = await db.execute(
+        select(UserVaultAssignment).where(
+            UserVaultAssignment.user_id == user_id,
+            UserVaultAssignment.vault_id == vault_id,
+        )
+    )
+    existing = result.scalar_one_or_none()
+    if existing is None:
+        db.add(UserVaultAssignment(
+            user_id=user_id, vault_id=vault_id, is_active=True,
+        ))
+    elif not existing.is_active:
+        existing.is_active = True
+    # Si ya existe activa: noop.
+
+
 _DENOMINATION_FIELDS = [
     "initial_bill_1000", "initial_bill_500", "initial_bill_200",
     "initial_bill_100", "initial_bill_50", "initial_bill_20",
@@ -125,6 +169,13 @@ async def create_vault(
     db.add(vault)
     await db.flush()
 
+    # Auto-asignar gerente/tesorero como ETVs con acceso a esta bóveda.
+    # Si llegan ids inválidos, la creación entera se revierte.
+    if manager_id is not None:
+        await _ensure_vault_assignment(db, manager_id, vault.id)
+    if treasurer_id is not None and treasurer_id != manager_id:
+        await _ensure_vault_assignment(db, treasurer_id, vault.id)
+
     await log_action(
         db,
         user_id=admin_user_id,
@@ -136,6 +187,8 @@ async def create_vault(
             "vault_name": vault_name,
             "initial_balance": str(initial_balance),
             "initial_denominations": {k: str(v) for k, v in denom_kwargs.items() if v},
+            "manager_id": manager_id,
+            "treasurer_id": treasurer_id,
         },
         ip_address=ip_address,
         user_agent=user_agent,
@@ -296,6 +349,8 @@ async def update_vault(
 ) -> Vault:
     vault = await get_vault(db, vault_id)
     old_values = {k: getattr(vault, k) for k in kwargs if hasattr(vault, k)}
+    prev_manager = vault.manager_id
+    prev_treasurer = vault.treasurer_id
 
     # Permitir asignar null en campos opcionales (empresa_id, manager_id, treasurer_id)
     nullable_fields = {"empresa_id", "manager_id", "treasurer_id"}
@@ -305,6 +360,17 @@ async def update_vault(
         if v is None and k not in nullable_fields:
             continue
         setattr(vault, k, v)
+
+    # Auto-asignar gerente/tesorero si fueron seteados (o cambiados a otro
+    # usuario). No revoca al des-asignar — eso vive en el módulo de usuarios.
+    if "manager_id" in kwargs and vault.manager_id and vault.manager_id != prev_manager:
+        await _ensure_vault_assignment(db, vault.manager_id, vault.id)
+    if (
+        "treasurer_id" in kwargs
+        and vault.treasurer_id
+        and vault.treasurer_id != prev_treasurer
+    ):
+        await _ensure_vault_assignment(db, vault.treasurer_id, vault.id)
 
     await log_action(
         db,
