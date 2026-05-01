@@ -154,7 +154,19 @@ export default function VaultDirectory() {
   }, [editSelectedCompanyId]);
 
   const handleDeactivate = async (vault: Vault) => {
-    if (!confirm(`¿Desactivar la bóveda ${vault.vault_code} — ${vault.vault_name}?`)) return;
+    const ok = window.confirm(
+      `⚠ Vas a desactivar la bóveda ${vault.vault_code} — ${vault.vault_name}.\n\n` +
+      'Esto corta la historia de la bóveda:\n' +
+      '• Se desasignan gerente y tesorero.\n' +
+      '• Se revocan los accesos de TODOS los ETVs que la tenían asignada.\n' +
+      '• Los arqueos previos se quedan archivados pero ya no cuentan para ' +
+      'cálculos.\n\n' +
+      'Si la reactivas más adelante empezará como nueva: pedirá ' +
+      'denominaciones iniciales y opcionalmente nuevos responsables. La ' +
+      'historia previa NO se reconectará automáticamente.\n\n' +
+      '¿Continúas con la desactivación?'
+    );
+    if (!ok) return;
     try { await vaultService.deactivateVault(vault.id); await load(); }
     catch (err) { alert(getErrorMessage(err)); }
   };
