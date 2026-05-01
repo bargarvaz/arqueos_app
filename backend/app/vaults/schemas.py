@@ -91,6 +91,22 @@ class VaultUpdate(BaseModel):
     initial_denominations: InitialDenominations | None = None
 
 
+class ReactivateVaultRequest(BaseModel):
+    """Petición de reactivación: requiere denominaciones y opcionalmente
+    gerente / tesorero. Si no se mandan los responsables, se asignan luego
+    desde Gestión de Usuarios."""
+    initial_balance: Decimal | None = Field(default=None, ge=0)
+    initial_denominations: InitialDenominations | None = None
+    manager_id: int | None = None
+    treasurer_id: int | None = None
+
+    @model_validator(mode="after")
+    def at_least_one(self):
+        if self.initial_balance is None and self.initial_denominations is None:
+            raise ValueError("Debes enviar initial_balance o initial_denominations.")
+        return self
+
+
 class SetInitialBalanceRequest(BaseModel):
     """
     Establece el saldo inicial via denominaciones.

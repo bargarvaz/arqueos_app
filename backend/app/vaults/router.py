@@ -13,6 +13,7 @@ from fastapi.responses import Response
 from app.vaults import service as vault_service
 from app.vaults.schemas import (
     VaultCreate, VaultUpdate, VaultResponse, SetInitialBalanceRequest,
+    ReactivateVaultRequest,
     BranchCreate, BranchUpdate, BranchResponse,
 )
 from app.common.pagination import PaginationParams, PagedResponse
@@ -215,7 +216,7 @@ async def deactivate_vault(
 async def reactivate_vault(
     request: Request,
     vault_id: int,
-    body: SetInitialBalanceRequest,
+    body: ReactivateVaultRequest,
     db: DbSession,
     admin=AdminUser,
 ):
@@ -225,7 +226,15 @@ async def reactivate_vault(
         body.initial_denominations.model_dump() if body.initial_denominations else None
     )
     return await vault_service.reactivate_vault(
-        db, vault_id, body.initial_balance, denoms, admin.id, ip, ua
+        db,
+        vault_id,
+        body.initial_balance,
+        denoms,
+        admin.id,
+        manager_id=body.manager_id,
+        treasurer_id=body.treasurer_id,
+        ip_address=ip,
+        user_agent=ua,
     )
 
 

@@ -122,6 +122,8 @@ const vaultService = {
     body: {
       initial_balance?: string;
       initial_denominations?: Partial<Record<keyof InitialDenominations, string>>;
+      manager_id?: number | null;
+      treasurer_id?: number | null;
     },
   ): Promise<Vault> => {
     const { data } = await api.post(`/vaults/${id}/reactivate`, body);

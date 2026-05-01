@@ -159,10 +159,15 @@ export default function VaultDirectory() {
     catch (err) { alert(getErrorMessage(err)); }
   };
 
+  const [reactivateManager, setReactivateManager] = useState<number | null>(null);
+  const [reactivateTreasurer, setReactivateTreasurer] = useState<number | null>(null);
+
   const openReactivate = (vault: Vault) => {
     setReactivateTarget(vault);
     setReactivateDenoms(emptyDenominations('initial_'));
     setReactivateError('');
+    setReactivateManager(null);
+    setReactivateTreasurer(null);
   };
 
   const handleReactivate = async () => {
@@ -171,6 +176,8 @@ export default function VaultDirectory() {
     try {
       await vaultService.reactivateVault(reactivateTarget.id, {
         initial_denominations: reactivateDenoms,
+        manager_id: reactivateManager,
+        treasurer_id: reactivateTreasurer,
       });
       setReactivateTarget(null);
       await load();
@@ -682,6 +689,32 @@ export default function VaultDirectory() {
                   value={reactivateDenoms}
                   onChange={setReactivateDenoms}
                 />
+              </div>
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-border">
+                <div>
+                  <label className="label">Gerente (opcional)</label>
+                  <ComboSelect
+                    options={userOptions}
+                    value={reactivateManager}
+                    onChange={setReactivateManager}
+                    placeholder="Buscar gerente..."
+                    emptyLabel="Sin gerente por ahora"
+                  />
+                </div>
+                <div>
+                  <label className="label">Tesorero (opcional)</label>
+                  <ComboSelect
+                    options={userOptions}
+                    value={reactivateTreasurer}
+                    onChange={setReactivateTreasurer}
+                    placeholder="Buscar tesorero..."
+                    emptyLabel="Sin tesorero por ahora"
+                  />
+                </div>
+                <p className="col-span-2 text-xs text-text-muted">
+                  Si los dejas vacíos, podrás asignarlos después desde
+                  Gestión de Usuarios o editando la bóveda.
+                </p>
               </div>
               {reactivateError && <p className="text-status-error text-sm">{reactivateError}</p>}
               <div className="flex gap-3">

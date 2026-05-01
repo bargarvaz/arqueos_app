@@ -445,8 +445,31 @@ async def deactivate_vault(
     if not vault.is_active:
         raise ConflictError("La bóveda ya está inactiva.")
 
+    # Snapshot de gerente/tesorero antes de limpiar (para audit y para
+    # decidir a quién revocar acceso).
+    prev_manager = vault.manager_id
+    prev_treasurer = vault.treasurer_id
+
     vault.is_active = False
     vault.deactivated_at = datetime.now(timezone.utc)
+    # Una bóveda inactiva no tiene responsables asignados.
+    vault.manager_id = None
+    vault.treasurer_id = None
+
+    # Revocar TODAS las UserVaultAssignment activas para esta bóveda.
+    # Si la bóveda se reactiva, el admin volverá a asignar usuarios desde
+    # cero (en el modal de reactivación o en gestión de usuarios).
+    from app.users.models import UserVaultAssignment
+    result = await db.execute(
+        select(UserVaultAssignment).where(
+            UserVaultAssignment.vault_id == vault_id,
+            UserVaultAssignment.is_active == True,
+        )
+    )
+    revoked_user_ids: list[int] = []
+    for assignment in result.scalars().all():
+        assignment.is_active = False
+        revoked_user_ids.append(assignment.user_id)
 
     await log_action(
         db,
@@ -454,8 +477,17 @@ async def deactivate_vault(
         action="vault_deactivate",
         entity_type="vault",
         entity_id=vault_id,
-        old_values={"is_active": True},
-        new_values={"is_active": False},
+        old_values={
+            "is_active": True,
+            "manager_id": prev_manager,
+            "treasurer_id": prev_treasurer,
+        },
+        new_values={
+            "is_active": False,
+            "manager_id": None,
+            "treasurer_id": None,
+            "revoked_user_ids": revoked_user_ids,
+        },
         ip_address=ip_address,
         user_agent=user_agent,
     )
@@ -470,12 +502,18 @@ async def reactivate_vault(
     initial_balance: Decimal | None,
     initial_denominations: dict[str, Decimal] | None,
     admin_user_id: int,
+    manager_id: int | None = None,
+    treasurer_id: int | None = None,
     ip_address: str | None = None,
     user_agent: str | None = None,
 ) -> Vault:
     """
     Reactiva una bóveda y establece su nuevo saldo inicial.
+
     Modo preferido: pasar `initial_denominations` (initial_balance se calcula).
+    `manager_id` y `treasurer_id` son opcionales — si no se pasan, la bóveda
+    queda activa sin responsables y el admin los puede asignar después
+    desde Gestión de Usuarios o editando la bóveda.
     """
     vault = await get_vault(db, vault_id)
     if vault.is_active:
@@ -495,6 +533,17 @@ async def reactivate_vault(
     # La reactivación equivale a un reset: a partir de hoy los cálculos
     # parten del nuevo saldo inicial, ignorando la historia previa.
     vault.balance_reset_at = date.today()
+
+    # Asignar responsables (opcional). Si vienen, se validan + se otorga
+    # UserVaultAssignment. Las asignaciones previas ya fueron desactivadas
+    # al inactivar la bóveda.
+    vault.manager_id = manager_id
+    vault.treasurer_id = treasurer_id
+    await db.flush()  # asegurar vault.id antes del helper
+    if manager_id is not None:
+        await _ensure_vault_assignment(db, manager_id, vault.id)
+    if treasurer_id is not None and treasurer_id != manager_id:
+        await _ensure_vault_assignment(db, treasurer_id, vault.id)
 
     await log_action(
         db,
