@@ -73,9 +73,6 @@ async def _ensure_vault_assignment(
 
     Valida que el usuario sea activo y de rol ETV; cualquier otra cosa
     levanta BusinessRuleError. Idempotente: llamadas repetidas no duplican.
-
-    Operación aditiva: nunca desactiva; revocar permisos sigue siendo
-    competencia explícita del módulo de usuarios.
     """
     from app.users.models import User, UserVaultAssignment, UserRole
     from app.common.exceptions import BusinessRuleError
@@ -105,6 +102,27 @@ async def _ensure_vault_assignment(
     elif not existing.is_active:
         existing.is_active = True
     # Si ya existe activa: noop.
+
+
+async def _revoke_vault_assignment(
+    db: AsyncSession,
+    user_id: int,
+    vault_id: int,
+) -> None:
+    """Desactiva la UserVaultAssignment del usuario para la bóveda. Si no
+    existe o ya está inactiva, no-op."""
+    from app.users.models import UserVaultAssignment
+
+    result = await db.execute(
+        select(UserVaultAssignment).where(
+            UserVaultAssignment.user_id == user_id,
+            UserVaultAssignment.vault_id == vault_id,
+            UserVaultAssignment.is_active == True,
+        )
+    )
+    existing = result.scalar_one_or_none()
+    if existing is not None:
+        existing.is_active = False
 
 
 _DENOMINATION_FIELDS = [
@@ -361,16 +379,33 @@ async def update_vault(
             continue
         setattr(vault, k, v)
 
-    # Auto-asignar gerente/tesorero si fueron seteados (o cambiados a otro
-    # usuario). No revoca al des-asignar — eso vive en el módulo de usuarios.
-    if "manager_id" in kwargs and vault.manager_id and vault.manager_id != prev_manager:
-        await _ensure_vault_assignment(db, vault.manager_id, vault.id)
-    if (
-        "treasurer_id" in kwargs
-        and vault.treasurer_id
-        and vault.treasurer_id != prev_treasurer
-    ):
-        await _ensure_vault_assignment(db, vault.treasurer_id, vault.id)
+    # ── Sincronización gerente/tesorero ↔ acceso a la bóveda ─────────────
+    # 1) Quien entra (manager_id / treasurer_id nuevos): se asegura su
+    #    UserVaultAssignment activa.
+    # 2) Quien sale (estaba como gerente/tesorero antes y ya no): se
+    #    desactiva su acceso, salvo que siga siendo el OTRO rol en la misma
+    #    bóveda (gerente y tesorero pueden ser el mismo usuario).
+    new_holders: set[int] = set()
+    if vault.manager_id:
+        new_holders.add(vault.manager_id)
+    if vault.treasurer_id:
+        new_holders.add(vault.treasurer_id)
+
+    prev_holders: set[int] = set()
+    if prev_manager:
+        prev_holders.add(prev_manager)
+    if prev_treasurer:
+        prev_holders.add(prev_treasurer)
+
+    # Solo procesar estos campos si el cliente los envió (evita revocar al
+    # patchar otros campos no relacionados).
+    touching_holders = "manager_id" in kwargs or "treasurer_id" in kwargs
+
+    if touching_holders:
+        for uid in new_holders - prev_holders:
+            await _ensure_vault_assignment(db, uid, vault.id)
+        for uid in prev_holders - new_holders:
+            await _revoke_vault_assignment(db, uid, vault.id)
 
     await log_action(
         db,
